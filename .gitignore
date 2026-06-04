@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+
+# NoneBot
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+
+# 本地数据
+bangumi_resource/
+
+# OS
+.DS_Store
+Thumbs.db
