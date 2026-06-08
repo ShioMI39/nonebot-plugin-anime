@@ -12,8 +12,9 @@ from .anime_time import (
     parse_single_date,
 )
 
-_cc_jp2t = opencc.OpenCC('jp2t.json')
-_cc_t2s = opencc.OpenCC('t2s.json')
+_cc_jp2t = opencc.OpenCC('jp2t')
+_cc_t2s = opencc.OpenCC('t2s')
+
 
 def normalize_for_person(text: str) -> str:
     """将人名中的日语汉字归一化为简体中文

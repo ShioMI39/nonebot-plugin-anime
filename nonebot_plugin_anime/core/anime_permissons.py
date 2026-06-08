@@ -71,7 +71,7 @@ group_permission_manager = GroupPermissionManager()
 
 # ==================== 权限检查函数 ====================
 async def is_private_or_allowed_group(event: Union[PrivateMessageEvent, GroupMessageEvent]) -> bool:
-    """私聊直接放行，群聊检查白名单"""
+    """检查白名单"""
     if isinstance(event, PrivateMessageEvent):
         if PRIVATE_ALLOW:
             return True

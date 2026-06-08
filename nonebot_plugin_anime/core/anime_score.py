@@ -270,7 +270,7 @@ class CharacterScoreManager:
             return None
 
     def get_character_scores_by_user(self, username: str) -> Dict[str, List[Tuple[str, str, int, str]]]:
-        """获取特定用户的所有角色评级，按等级分组（包含图片URL）- 修复版"""
+        """获取特定用户的所有角色评级，按等级分组（包含图片URL）"""
         user_scores = {
             5: [],  # 夯
             4: [],  # 顶级

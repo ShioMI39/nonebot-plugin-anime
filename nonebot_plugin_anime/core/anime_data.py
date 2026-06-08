@@ -428,27 +428,3 @@ class BGMDataManager:
             today_animes = weekday_groups['其他']
 
         return today_animes
-
-    def get_weekpic_path(self, year: int, month: int) -> Path:
-        """获取星期图路径"""
-        # 月份必须是1、4、7、10
-        if month not in [1, 4, 7, 10]:
-            raise ValueError("月份必须是1、4、7、10中的一个")
-
-        filename = f"{year}-{month:02d}.png"
-        return self.weekpic / filename
-
-    def weekpic_exists(self, year: int, month: int) -> bool:
-        """检查星期图是否存在"""
-        try:
-            path = self.get_weekpic_path(year, month)
-            return path.exists() and path.is_file()
-        except ValueError:
-            return False
-
-    def get_weekpic_list(self) -> List[str]:
-        """获取所有可用的星期图列表"""
-        weekpics = []
-        for file in self.weekpic.glob("*.png"):
-            weekpics.append(file.stem)
-        return sorted(weekpics)
