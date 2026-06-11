@@ -34,7 +34,7 @@ async def handle_anime_view(event: Event, arg: Message = CommandArg()):
     year, month = result
 
     # 验证年份范围
-    if validate_year(year):
+    if not validate_year(year):
         await anime_view.finish("年份范围超出")
 
     # 获取月份名称
@@ -104,6 +104,10 @@ async def handle_anime_view_week(event: Event, arg: Message = CommandArg()):
     if not result[0]:
         await anime_view_week.finish("季度格式错误，请使用如：2025年4月")
     year, month = result
+
+    # 验证年份范围
+    if not validate_year(year):
+        await anime_view_week.finish("年份范围超出")
 
     # 获取月份名称
     month_name = MONTH_NAMES.get(month, f"{month}月")
