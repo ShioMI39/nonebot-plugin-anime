@@ -190,35 +190,31 @@ async def handle_anime_bgmmonth(args: Message = CommandArg()):
 
     await anime_bgmmonth.send(f"开始获取 {year}年{month}月 的 {media_type.upper()} 番剧信息...")
 
-    try:
-        existing_data = bgm_manager.load_all_data()
+    existing_data = bgm_manager.load_all_data()
 
-        concurrency = 5 if BANGUMI_API_TOKEN else 1
-        new_anime = await bgm_api.fetch_anime_by_month(year, month, media_type, max_concurrency=concurrency)
+    concurrency = 5 if BANGUMI_API_TOKEN else 1
+    new_anime = await bgm_api.fetch_anime_by_month(year, month, media_type, max_concurrency=concurrency)
 
-        if not new_anime:
-            await anime_bgmmonth.finish("获取数据失败，未找到任何番剧")
+    if not new_anime:
+        await anime_bgmmonth.finish("获取数据失败，未找到任何番剧")
 
-        added = 0
-        updated = 0
-        for title, data in new_anime.items():
-            if title in existing_data:
-                updated += 1
-            else:
-                added += 1
-            existing_data[title] = data
-
-        if bgm_manager.save_all_data(existing_data):
-            await anime_bgmmonth.send(
-                f"成功获取并更新了 {len(new_anime)} 部番剧\n"
-                f"新增: {added} 部, 更新: {updated} 部"
-            )
+    added = 0
+    updated = 0
+    for title, data in new_anime.items():
+        if title in existing_data:
+            updated += 1
         else:
-            await anime_bgmmonth.send("获取数据成功，但保存失败")
+            added += 1
+        existing_data[title] = data
 
-    except Exception as e:
-        logger.opt(exception=True).error("处理月份获取时发生错误")
-        await anime_bgmmonth.send(f"处理过程中发生错误: {str(e)[:100]}")
+    if bgm_manager.save_all_data(existing_data):
+        await anime_bgmmonth.finish(
+            f"成功获取并更新了 {len(new_anime)} 部番剧\n"
+            f"新增: {added} 部, 更新: {updated} 部"
+        )
+    else:
+        await anime_bgmmonth.finish("获取数据成功，但保存失败")
+
 
 
 

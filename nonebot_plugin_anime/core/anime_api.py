@@ -131,7 +131,7 @@ class BangumiAPIClient:
 
         logger.info(f"开始获取 {year}年{month}月 {media_type} 番剧")
 
-        result = await self.search_subjects("", filters=filters, sort="date", limit=50)
+        result = await self.search_subjects("", filters=filters, limit=50)
         if not result or "data" not in result:
             logger.warning(f"{year}年{month}月搜索结果为空")
             return {}
