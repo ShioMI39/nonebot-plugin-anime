@@ -171,8 +171,8 @@ async def handle_anime_bgmmonth(args: Message = CommandArg()):
     if not args_text:
         await anime_bgmmonth.finish("使用方法:\n"
                                     "anime bgmmonth <年月> <类型>\n"
-                                    "例如: anime bgmmonth 2026-1 tv\n"
-                                    "例如: anime bgmmonth 2026-1 movie")
+                                    "例如: anime bgmmonth 2026年1月 tv\n"
+                                    "例如: anime bgmmonth 2026年1月 movie")
 
     parts = args_text.split()
     if len(parts) < 2:
@@ -186,9 +186,9 @@ async def handle_anime_bgmmonth(args: Message = CommandArg()):
 
     year, month = parse_single_date(year_month)
     if not year or not validate_year(year) or not (1 <= month <= 12):
-        await anime_bgmmonth.finish("年月格式不正确，请使用例如: 2026-1")
+        await anime_bgmmonth.finish("年月格式不正确，请使用例如: 2026年1月")
 
-    await anime_bgmmonth.send(f"开始获取 {year}年{month}月 的 {media_type.upper()} 番剧信息...")
+    await anime_bgmmonth.send(f"开始获取 {year}年{month}月季度 的 {media_type.upper()} 番剧信息...")
 
     existing_data = bgm_manager.load_all_data()
 

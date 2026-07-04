@@ -89,10 +89,25 @@ class BangumiAPIClient:
         """获取章节列表  GET /v0/episodes"""
         return await self._get("/v0/episodes", subject_id=subject_id, limit=limit, offset=0)
 
-    async def search_subjects(self, keyword: str, *, filters: dict = None, sort: str = "rank", limit: int = 50) -> Optional[dict]:
+    async def search_subjects(self, keyword: str, *, filters: dict = None, sort: str = "rank", limit: int = 100) -> Optional[dict]:
         """搜索条目  POST /v0/search/subjects"""
         body = {"keyword": keyword, "sort": sort, "filter": filters or {}}
         return await self._post("/v0/search/subjects", body, limit=limit, offset=0)
+
+    async def browse_subjects(self, *, type_id: int = 2, cat: int, sort: str = "date",
+                                year: int, month: int,
+                                limit: int = 50, offset: int = 0) -> Optional[dict]:
+        """浏览条目  GET /v0/subjects
+
+        type_id: 条目类型，2=动画
+        cat:      分类，1=TV, 2=OVA, 3=剧场版, 5=WEB
+        sort:     排序，date/rank
+        year:     年份
+        month:    月份
+        """
+        return await self._get("/v0/subjects", type=type_id, cat=cat, sort=sort, year=year,
+                               month=month, limit=limit, offset=offset)
+
 
     async def fetch_anime_by_id(self, subject_id: int) -> Optional[dict]:
         """通过 ID 获取番剧完整数据"""
@@ -113,43 +128,42 @@ class BangumiAPIClient:
 
         return self._assemble_anime_data(subject, persons, characters)
 
+
     async def fetch_anime_by_month(self, year: int, month: int, media_type: str = "tv", max_concurrency: int = 1) -> Dict[str, dict]:
-        """获取指定月份的番剧列表，返回 {中文标题: 完整数据} 字典"""
-        season_info = QUARTER_MONTHS.get(month, (f"{month:02d}", f"{month:02d}"))
-        air_from = f">={year}-{season_info[0]}-01"
+        """获取指定季度的番剧列表，返回 {中文标题: 完整数据} 字典"""
+        cat_map = {"tv": 1, "ova": 2, "movie": 3, "web": 5}
+        cat = cat_map.get(media_type)
 
-        end_month_num = int(season_info[1]) + 1
-        if end_month_num > 12:
-            air_to = f"<{year + 1}-01-01"
-        else:
-            air_to = f"<{year}-{end_month_num:02d}-01"
+        # 计算该季度包含的三个月
+        q_start = month
+        q_months = [q_start, q_start + 1, q_start + 2]
 
-        filters = {
-            "type": [2],
-            "air_date": [air_from, air_to],
-        }
+        logger.info(f"开始获取 {year}年{month}季度 {media_type} 番剧（逐月: {q_months}）")
 
-        logger.info(f"开始获取 {year}年{month}月 {media_type} 番剧")
+        # 并发获取三个月的结果
+        async def _browse_one(m: int) -> list:
+            result = await self.browse_subjects(type_id=2, cat=cat, sort="date",
+                                                 year=year, month=m,
+                                                 limit=100, offset=0)
+            return result["data"] if result and "data" in result else []
 
-        result = await self.search_subjects("", filters=filters, limit=50)
-        if not result or "data" not in result:
-            logger.warning(f"{year}年{month}月搜索结果为空")
+        monthly_results = await asyncio.gather(*[_browse_one(m) for m in q_months])
+
+        # 合并三个月结果，按 id 去重
+        seen_ids = set()
+        items = []
+        for m_items in monthly_results:
+            for item in m_items:
+                sid = item.get("id")
+                if sid and sid not in seen_ids:
+                    seen_ids.add(sid)
+                    items.append(item)
+
+        if not items:
+            logger.warning(f"{year}年{month}季度 搜索结果为空")
             return {}
 
-        items = result["data"]
-
-        if media_type == "tv":
-            items = [
-                s for s in items
-                if s.get("platform", "").lower() in ("tv", "web", "ova", "")
-            ]
-        elif media_type == "movie":
-            items = [
-                s for s in items
-                if s.get("platform", "").lower() in ("movie", "film", "剧场版")
-            ]
-
-        logger.info(f"找到 {len(items)} 个条目，开始获取详情（并发={max_concurrency}）")
+        logger.info(f"共找到 {len(items)} 个条目，开始获取详情（并发={max_concurrency}）")
 
         all_data = {}
 
