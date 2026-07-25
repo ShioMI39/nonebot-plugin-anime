@@ -1,5 +1,6 @@
 from ..core import bgm_manager, bgm_api
-from ..core.anime_session import set_session, cleanup_old_sessions
+from ..core.anime_session import set_session, cleanup_old_sessions, get_user_session
+from ..core.anime_formatting import format_search_results_page
 from ..core.anime_permissons import is_private_or_allowed_group
 from ..core.anime_time import parse_single_date, validate_year
 from ..config import BANGUMI_API_TOKEN
@@ -99,19 +100,8 @@ async def handle_anime_bgmget(bot: Bot, event: Event, args: Message = CommandArg
                 search_type='bgmget',
                 search_query=args_text
             )
-
-            # 显示搜索结果列表
-            result_list = []
-            for i, (title, info) in enumerate(results[:10], 1):
-                basic_info = info.get('basic_info', {})
-                episodes = basic_info.get('episodes', '?')
-                year = basic_info.get('start_date', '')[:4] if basic_info.get('start_date') else '?'
-                result_list.append(f"{i}. {title} ({episodes}话, {year}年)")
-
-            selection_msg = f"找到{len(results)}个包含 '{args_text}' 的番剧:\n" + "\n".join(result_list)
-            selection_msg += f"\n\n请回复编号获取最新数据 (输入数字 1~{min(len(results), 10)})"
-
-            await anime_bgmget.send(selection_msg)
+            page_msg = format_search_results_page(get_user_session(event), f"包含 '{args_text}'")
+            await anime_bgmget.send(page_msg)
 
 
 @anime_getmonth.handle()
