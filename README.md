@@ -43,7 +43,7 @@ ANIME__BGM_API_TOKEN=xxx
 
 申请Bangumi的API可以点击此链接 [Bangumi API](https://next.bgm.tv/demo/access-token)
 
- 需[网盘](https://pan.baidu.com/s/1sYJjgkrrT9ZBJp11LAZrNg?pwd=wt3p)下载 `bangumi_resource` 资源包并解压
+ 需[网盘](https://pan.baidu.com/s/1cgq8yGkQoZUH0dHKEo2ZRA?pwd=7mjp)下载 `bangumi_resource` 资源包并解压
 
 资源包包含预置番剧数据 (`bgm.json`)、字体文件 (`fonts/`) 。
 
