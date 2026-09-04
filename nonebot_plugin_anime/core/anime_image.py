@@ -72,7 +72,7 @@ class CharacterScoreImageGenerator:
                 # 计算角色区域的实际高度
                 character_area_height = rows * image_size + (rows - 1) * row_spacing if rows > 0 else image_size
                 # 等级区域高度 = 标题块高度与角色行高度的最大值
-                level_height = max(title_block_size, character_area_height)
+                level_height = max(title_block_size, character_area_height + 18 + border_padding)
 
                 level_layouts[level] = {
                     'characters': characters,
@@ -301,7 +301,7 @@ class CharacterScoreImageGenerator:
         return f"character_{safe_char_name}_{safe_anime_title}.jpg"
 
     async def download_character_images_batch(self, characters: List[Tuple[int, str, str, str]]) -> Dict[str, Image.Image]:
-        """批量下载角色图片"""
+        """批量下载角色图片（(等级, 角色名, 条目id, 图片URL)，缓存键含条目id）"""
         character_images = {}
 
         download_tasks = []
@@ -428,7 +428,7 @@ class AnimeScoreImageGenerator:
 
             sorted_scores = sorted(filtered_scores, key=lambda x: x[1], reverse=True)
 
-            # 获取番剧详细信息
+            # 获取番剧详细信息（评分为 (条目id, 分数)，直接按 id 取数据）
             anime_details = []
             for anime_id, score in sorted_scores:
                 anime_info = self.bgm_manager.all_data.get(str(anime_id))
@@ -504,7 +504,7 @@ class AnimeScoreImageGenerator:
                 # 计算番剧区域的实际高度
                 anime_area_height = rows * image_size + (rows - 1) * row_spacing if rows > 0 else image_size
                 # 等级区域高度
-                level_height = max(title_block_size, anime_area_height)
+                level_height = max(title_block_size, anime_area_height + 18 + border_padding)
 
                 level_layouts[score] = {
                     'animes': animes,
