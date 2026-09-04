@@ -1,6 +1,6 @@
 import json
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from .anime_data import BGMDataManager
 
 from nonebot import logger
@@ -40,33 +40,42 @@ class TagManager:
         tags = anime_info.get('tags', [])
         return [tag['name'] for tag in tags] if isinstance(tags, list) else []
 
-    def add_tag(self, anime_info: Dict, tag_name: str, title: str) -> bool:
+    def _find_anime(self, anime_info: Dict) -> Optional[Dict]:
+        """按条目 id 定位实际存储的记录"""
+        if self.all_data is None:
+            self.load_all_data()
+        anime_id = anime_info.get('id') if isinstance(anime_info, dict) else None
+        if anime_id is None:
+            return None
+        return self.all_data.get(str(anime_id))
+
+    def add_tag(self, anime_info: Dict, tag_name: str, title: str = "") -> bool:
         """为番剧添加标签"""
         try:
             if self.all_data is None:
                 self.load_all_data()
 
-            if title not in self.all_data:
-                logger.warning(f"标签操作: 找不到番剧 '{title}'")
+            target_anime = self._find_anime(anime_info)
+            if target_anime is None:
+                logger.warning(f"标签操作: 找不到番剧 '{title or anime_info}'")
                 return False
 
-            target_anime = self.all_data[title]
-
-            if 'tags' not in target_anime:
+            if 'tags' not in target_anime or not isinstance(target_anime['tags'], list):
                 target_anime['tags'] = []
 
-            existing_tags = self.get_anime_tags(target_anime)
-            if tag_name in existing_tags:
+            if any(t.get('name') == tag_name for t in target_anime['tags']):
                 return False
 
             target_anime['tags'].append({'name': tag_name, 'count': 0})
 
-            if 'tags' not in anime_info:
-                anime_info['tags'] = []
-            anime_info['tags'].append({'name': tag_name, 'count': 0})
+            if anime_info is not target_anime:
+                if 'tags' not in anime_info or not isinstance(anime_info['tags'], list):
+                    anime_info['tags'] = []
+                if not any(t.get('name') == tag_name for t in anime_info['tags']):
+                    anime_info['tags'].append({'name': tag_name, 'count': 0})
 
             if self.save_all_data():
-                logger.info(f"添加标签 '{tag_name}' 到《{title}》")
+                logger.info(f"添加标签 '{tag_name}' 到《{title}》(id={target_anime.get('id')})")
                 return True
             return False
 
@@ -74,34 +83,34 @@ class TagManager:
             logger.opt(exception=True).error("添加标签失败")
             return False
 
-    def remove_tag(self, anime_info: Dict, tag_name: str, title: str) -> bool:
+    def remove_tag(self, anime_info: Dict, tag_name: str, title: str = "") -> bool:
         """删除番剧的标签"""
         try:
             if self.all_data is None:
                 self.load_all_data()
 
-            if title not in self.all_data:
-                logger.warning(f"标签操作: 找不到番剧 '{title}'")
+            target_anime = self._find_anime(anime_info)
+            if target_anime is None:
+                logger.warning(f"标签操作: 找不到番剧 '{title or anime_info}'")
                 return False
 
-            target_anime = self.all_data[title]
-
-            if 'tags' not in target_anime:
+            if 'tags' not in target_anime or not isinstance(target_anime['tags'], list):
                 return False
 
             original_length = len(target_anime['tags'])
             target_anime['tags'] = [tag for tag in target_anime['tags']
                                     if tag.get('name') != tag_name]
 
-            if 'tags' in anime_info:
-                anime_info['tags'] = [tag for tag in anime_info['tags']
-                                      if tag.get('name') != tag_name]
-
             if len(target_anime['tags']) == original_length:
                 return False
 
+            if anime_info is not target_anime and isinstance(anime_info, dict):
+                if 'tags' in anime_info and isinstance(anime_info['tags'], list):
+                    anime_info['tags'] = [tag for tag in anime_info['tags']
+                                          if tag.get('name') != tag_name]
+
             if self.save_all_data():
-                logger.info(f"删除标签 '{tag_name}' 从《{title}》")
+                logger.info(f"删除标签 '{tag_name}' 从《{title}》(id={target_anime.get('id')})")
                 return True
             return False
 

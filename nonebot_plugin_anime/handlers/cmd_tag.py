@@ -63,8 +63,10 @@ async def display_anime_tags(bot: Bot, event: Event, title_cn: str, anime_info: 
     """显示番剧标签信息"""
     tag_manager.load_all_data()
 
-    # 从内存数据中获取最新的番剧信息
-    latest_anime_info = tag_manager.all_data.get(title_cn, anime_info)
+    anime_id = anime_info.get('id') if isinstance(anime_info, dict) else None
+    latest_anime_info = tag_manager.all_data.get(str(anime_id)) if anime_id is not None else None
+    if latest_anime_info is None:
+        latest_anime_info = anime_info
 
     # 获取标签
     tags = tag_manager.get_anime_tags(latest_anime_info)

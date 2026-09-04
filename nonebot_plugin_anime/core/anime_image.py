@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 from typing import Dict, List, Optional, Tuple
 from .anime_data import BGMDataManager
 from .anime_score import CharacterScoreManager, UserScoreManager
+from .anime_filter import get_display_title
 from ..config import FONTS_DIR
 
 from nonebot import logger
@@ -122,8 +123,8 @@ class CharacterScoreImageGenerator:
             all_characters = []
             for level in [5, 4, 3, 2, 1]:
                 if level in level_layouts:
-                    all_characters.extend([(level, char_name, anime_title, image_url)
-                                           for char_name, anime_title, _, image_url in
+                    all_characters.extend([(level, char_name, anime_id, image_url)
+                                           for char_name, anime_id, _, image_url in
                                            level_layouts[level]['characters']])
 
             character_images = await self.download_character_images_batch(all_characters)
@@ -198,11 +199,11 @@ class CharacterScoreImageGenerator:
                     row_chars = characters[i:i + max_per_row]
 
                     # 绘制一行角色
-                    for j, (char_name, anime_title, _, image_url) in enumerate(row_chars):
+                    for j, (char_name, anime_id, _, image_url) in enumerate(row_chars):
                         x = char_start_x + j * image_size
 
                         # 获取角色图片
-                        image_key = f"{char_name}||{anime_title}"
+                        image_key = f"{char_name}||{anime_id}"
                         char_image = character_images.get(image_key)
 
                         if char_image:
@@ -304,25 +305,25 @@ class CharacterScoreImageGenerator:
         character_images = {}
 
         download_tasks = []
-        for level, char_name, anime_title, image_url in characters:
+        for level, char_name, anime_id, image_url in characters:
             if image_url:
-                task = (image_url, "character", char_name, anime_title)
+                task = (image_url, "character", char_name, anime_id)
                 download_tasks.append(task)
 
         downloaded_images = await self.bgm_manager.image_manager.batch_download_images(download_tasks)
 
         # 处理下载的图片
-        for level, char_name, anime_title, image_url in characters:
+        for level, char_name, anime_id, image_url in characters:
             try:
                 cache_key = self.bgm_manager.image_manager.get_cache_key(
-                    "character", char_name, anime_title
+                    "character", char_name, anime_id
                 )
 
                 if cache_key in downloaded_images:
                     image_path = downloaded_images[cache_key]
                     char_image = Image.open(image_path)
                     processed_image = self.process_character_image(char_image)
-                    character_images[f"{char_name}||{anime_title}"] = processed_image
+                    character_images[f"{char_name}||{anime_id}"] = processed_image
             except Exception as e:
                 logger.warning(f"处理角色图片失败: {char_name}")
 
@@ -429,17 +430,19 @@ class AnimeScoreImageGenerator:
 
             # 获取番剧详细信息
             anime_details = []
-            for anime_title, score in sorted_scores:
-                anime_info = self.bgm_manager.all_data.get(anime_title)
+            for anime_id, score in sorted_scores:
+                anime_info = self.bgm_manager.all_data.get(str(anime_id))
                 if anime_info:
                     cover_url = anime_info.get('cover_url')
                     basic_info = anime_info.get('basic_info', {})
+                    display_title = get_display_title(anime_info)
                     japanese_title = basic_info.get('original_title', '') or anime_info.get('title_jp', '')
-                    chinese_title = basic_info.get('chinese_title', '') or anime_info.get('title_cn', '')
+                    if not japanese_title:
+                        japanese_title = display_title
 
                     anime_details.append({
-                        'title_cn': anime_title,
-                        'title_jp': japanese_title or chinese_title,  # 优先日文名
+                        'title_cn': display_title or str(anime_id),
+                        'title_jp': japanese_title or display_title,
                         'score': score,
                         'cover_url': cover_url,
                         'anime_info': anime_info

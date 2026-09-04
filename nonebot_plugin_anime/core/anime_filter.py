@@ -16,6 +16,22 @@ _cc_jp2t = opencc.OpenCC('jp2t')
 _cc_t2s = opencc.OpenCC('t2s')
 
 
+def get_display_title(info: Dict) -> str:
+    """从条目数据中取可读番剧名"""
+    if not isinstance(info, dict):
+        return ""
+    basic_info = info.get('basic_info') or {}
+    for key in ('chinese_title', 'original_title'):
+        val = (basic_info.get(key) or "").strip()
+        if val:
+            return val
+    for key in ('title_cn', 'title_jp'):
+        val = (info.get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
 def normalize_for_person(text: str) -> str:
     """将人名中的日语汉字归一化为简体中文
     日语汉字 - 繁中 - 简中
@@ -119,15 +135,12 @@ def filter_anime(all_data: Dict[str, Dict], filters: Dict) -> List[Tuple[str, Di
             season_range_tuple = get_season_range(year, filters['month'])
 
     results = []
-    for title, info in all_data.items():
+    for dict_key, info in all_data.items():
         # 1. 关键词
         if 'keyword' in filters:
             kw = filters['keyword'].lower()
-            basic_info = info.get('basic_info', {})
-            matched = (
-                kw in title.lower()
-                or kw in basic_info.get('original_title', '').lower()
-            )
+            display_title = get_display_title(info)
+            matched = kw in display_title.lower()
             if not matched:
                 aliases = info.get('aliases', [])
                 for alias in aliases:
@@ -243,6 +256,6 @@ def filter_anime(all_data: Dict[str, Dict], filters: Dict) -> List[Tuple[str, Di
             if info.get('basic_info', {}).get('media_type', '') != filters['media_type']:
                 continue
 
-        results.append((title, info))
+        results.append((get_display_title(info) or str(dict_key), info))
 
     return results

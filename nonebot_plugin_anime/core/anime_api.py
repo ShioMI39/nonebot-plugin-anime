@@ -130,7 +130,7 @@ class BangumiAPIClient:
 
 
     async def fetch_anime_by_month(self, year: int, month: int, media_type: str = "tv", max_concurrency: int = 1) -> Dict[str, dict]:
-        """获取指定季度的番剧列表，返回 {中文标题: 完整数据} 字典"""
+        """获取指定季度的番剧列表，返回 {str(条目id): 完整数据} 字典"""
         cat_map = {"tv": 1, "ova": 2, "movie": 3, "web": 5}
         cat = cat_map.get(media_type)
 
@@ -173,10 +173,7 @@ class BangumiAPIClient:
             logger.debug(f"获取 {name} ({sid})")
             anime = await self.fetch_anime_by_id(sid)
             if anime:
-                key = anime["basic_info"].get("chinese_title") or anime.get("title_cn", "")
-                if not key:
-                    key = anime["basic_info"].get("original_title", "")
-                all_data[key] = anime
+                all_data[str(anime["id"])] = anime
 
         if max_concurrency > 1:
             sem = asyncio.Semaphore(max_concurrency)
@@ -326,6 +323,7 @@ class BangumiAPIClient:
             actors = c.get("actors", []) or []
             cv_name = actors[0].get("name", "") if actors else ""
             char_list.append({
+                "id": str(c.get("id", "")) if c.get("id") is not None else "",
                 "original_name": c.get("name", ""),
                 "translated_name": c.get("translated_name", ""),
                 "role": (c.get("relation") or "配角") if c.get("relation") else "配角",

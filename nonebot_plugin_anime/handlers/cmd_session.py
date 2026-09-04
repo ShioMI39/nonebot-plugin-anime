@@ -335,7 +335,8 @@ async def handle_score_session(bot: Bot, event: Event, user_input: str, session:
         title_cn, anime_info = session.search_results[selection - 1]
 
         # 添加评分
-        success = user_score_manager.add_user_score(title_cn, session.score_username, session.score_value)
+        anime_id = anime_info.get('id')
+        success = user_score_manager.add_user_score(anime_id, session.score_username, session.score_value)
         if success:
             await anime_session_handler.send(f"已为『{title_cn}』添加评分：{session.score_username}{session.score_value}")
         else:
@@ -393,11 +394,11 @@ async def handle_score_delete_session(bot: Bot, event: Event, user_input: str, s
             return
 
         # 获取要删除的评分
-        anime_title, score = session.delete_scores[selection - 1]
+        anime_id, score, display_title = session.delete_scores[selection - 1]
         username = session.delete_username
 
         # 删除评分
-        success = user_score_manager.delete_user_score(anime_title, username)
+        success = user_score_manager.delete_user_score(anime_id, username)
         if success:
             # 从会话中移除已删除的评分
             session.delete_scores.pop(selection - 1)
@@ -406,7 +407,7 @@ async def handle_score_delete_session(bot: Bot, event: Event, user_input: str, s
             if selection - 1 < len(session.search_results):
                 session.search_results.pop(selection - 1)
 
-            await bot.send(event, f"已删除 {username} 对『{anime_title}』的评分：{score}")
+            await bot.send(event, f"已删除 {username} 对『{display_title}』的评分：{score}")
 
             # 如果还有评分，刷新列表；否则结束会话
             if session.delete_scores:
@@ -449,11 +450,12 @@ async def handle_character_rate_session(bot: Bot, event: Event, user_input: str,
         # 获取选择的角色信息
         character_name, character_info = session.search_results[selection - 1]
         anime_title = character_info.get('anime_title', '未知番剧')
+        anime_id = character_info.get('anime_id')
         username = session.character_username
         score = session.character_score
 
         # 添加角色评级
-        success = character_score_manager.add_character_score(character_name, anime_title, username, score)
+        success = character_score_manager.add_character_score(character_name, anime_id, anime_title, username, score)
         if success:
             level_name = character_score_manager.get_level_display_name(score)
             await bot.send(event, f"已为『{anime_title}』中的『{character_name}』添加评级：{level_name}")
@@ -485,35 +487,24 @@ async def handle_character_delete_session(bot: Bot, event: Event, user_input: st
             await bot.send(event, f"无效的选择编号，请输入 1~{total_scores} 之间的数字，或输入 '0' 退出")
             return
 
-        # 获取要删除的评级 - 三元组 (character_name, anime_title, score)
-        character_name, anime_title, score = session.delete_scores[selection - 1]
+        # 获取要删除的评级
+        character_name, anime_id, score = session.delete_scores[selection - 1]
         username = session.delete_username
+        anime_title = character_score_manager.resolve_anime_title(anime_id)
 
-        logger.info(f"删除角色评分: {character_name}（{anime_title}）- 用户: {username}")
+        logger.info(f"删除角色评分: {character_name}（条目 {anime_id}）- 用户: {username}")
 
         # 删除评级
-        success = character_score_manager.delete_character_score(character_name, anime_title, username)
+        success = character_score_manager.delete_character_score(character_name, anime_id, username)
         if success:
             # 从会话中移除已删除的评级
             session.delete_scores.pop(selection - 1)
-
-            # 更新search_results以保持同步
-            if selection - 1 < len(session.search_results):
-                session.search_results.pop(selection - 1)
 
             level_name = character_score_manager.get_level_display_name(score)
             await bot.send(event, f"已删除 {username} 对『{anime_title}』中的『{character_name}』的评级：{level_name}")
 
             # 如果还有评级，刷新列表；否则结束会话
             if session.delete_scores:
-                # 重新计算分页
-                total_results = len(session.search_results)
-                session.total_pages = math.ceil(total_results / session.page_size)
-
-                # 如果当前页没有内容了，回到上一页
-                if session.current_page >= session.total_pages:
-                    session.current_page = max(0, session.total_pages - 1)
-
                 await send_character_delete_list(bot, event, session)
             else:
                 clear_user_session(event)

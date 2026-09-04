@@ -58,7 +58,7 @@ async def handle_anime_score(event: Event, args: Message = CommandArg()):
     # 如果只有一个结果，直接评分
     if len(results) == 1:
         title_cn, anime_info = results[0]
-        success = user_score_manager.add_user_score(title_cn, username, score)
+        success = user_score_manager.add_user_score(anime_info.get('id'), username, score)
         if success:
             await anime_score.finish(f"已为『{title_cn}』添加评分：{username}{score}")
         else:
@@ -121,8 +121,8 @@ async def handle_anime_score_search(args: Message = CommandArg()):
             await anime_score_search.finish(f"未找到{username}{min_score}的番剧")
 
         result_list = []
-        for i, anime_title in enumerate(results, 1):
-            result_list.append(f"{i}. {anime_title}")
+        for i, anime_id in enumerate(results, 1):
+            result_list.append(f"{i}. {bgm_manager.get_display_name_by_id(anime_id)}")
         result_msg = f"{username}{min_score}的番剧有：\n" + "\n".join(result_list)
         await anime_score_search.send(result_msg)
     else:
@@ -135,8 +135,8 @@ async def handle_anime_score_search(args: Message = CommandArg()):
         result_messages = []
         for score, anime_list in results.items():
             score_group = []
-            for i, anime_title in enumerate(anime_list, 1):
-                score_group.append(f"{i}. {anime_title}")
+            for i, anime_id in enumerate(anime_list, 1):
+                score_group.append(f"{i}. {bgm_manager.get_display_name_by_id(anime_id)}")
 
             result_messages.append(f"{username}{score}的番剧有：\n" + "\n".join(score_group))
 
@@ -181,7 +181,8 @@ async def handle_anime_score_show(bot: Bot, event: Event, args: Message = Comman
 
 async def display_user_scores(bot: Bot, event: Event, title_cn: str, anime_info: Dict):
     """展示番剧的用户评分"""
-    sorted_scores = user_score_manager.get_sorted_user_scores(title_cn)
+    anime_id = anime_info.get('id')
+    sorted_scores = user_score_manager.get_sorted_user_scores(anime_id) if anime_id is not None else []
 
     # 构建消息
     message_parts = []
@@ -239,13 +240,21 @@ async def handle_anime_score_delete(event: Event, args: Message = CommandArg()):
     if not user_scores:
         await anime_score_delete.finish(f"用户 '{username}' 暂无评分记录")
 
+    # 构造删除会话
+    delete_scores = []
+    search_results = []
+    for anime_id, score in user_scores:
+        display_title = bgm_manager.get_display_name_by_id(anime_id)
+        delete_scores.append((anime_id, score, display_title))
+        search_results.append((display_title, {"score": score, "anime_id": anime_id}))
+
     # 设置评分删除会话
     set_session(
         event,
         'score_delete',
-        delete_scores=user_scores,
+        delete_scores=delete_scores,
         delete_username=username,
-        search_results=[(anime_title, {"score": score}) for anime_title, score in user_scores],
+        search_results=search_results,
         search_type='score_delete',
         search_query=username,
         current_page=0

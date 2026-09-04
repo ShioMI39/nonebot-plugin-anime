@@ -63,9 +63,10 @@ async def handle_anime_character_rate(event: Event, args: Message = CommandArg()
     if len(results) == 1:
         char_name, character_info = results[0]
         anime_title = character_info.get('anime_title', '未知番剧')
+        anime_id = character_info.get('anime_id')
         image_url = character_info.get('image_url')
 
-        success = character_score_manager.add_character_score(char_name, anime_title, username, score, image_url)
+        success = character_score_manager.add_character_score(char_name, anime_id, anime_title, username, score, image_url)
         if success:
             level_name = character_score_manager.get_level_display_name(score)
             await anime_character_rate.finish(f"已为『{anime_title}』中的『{char_name}』添加评级：{level_name}")
@@ -120,21 +121,18 @@ async def handle_anime_character_delete(bot: Bot, event: Event, args: Message = 
 
     username = args_text
 
-    # 获取该用户的所有角色评级
+    # 获取该用户的所有角色评级（角色名, 条目id, 等级）
     user_scores = character_score_manager.get_all_character_scores_by_user(username)
 
     if not user_scores:
         await anime_character_delete.finish(f"用户 '{username}' 暂无角色评级记录")
 
-    # 设置角色评级删除会话 - 使用三元组数据结构
+    # 设置角色评级删除会话 - delete_scores 为 (角色名, 条目id, 等级) 三元组
     set_session(
         event,
         'character_delete',
-        delete_scores=user_scores,
+        delete_scores=list(user_scores),
         delete_username=username,
-        search_results=[
-            (f"{char_name} - {anime_title}", {"score": score, "character_name": char_name, "anime_title": anime_title})
-            for char_name, anime_title, score in user_scores],
         search_type='character_delete',
         search_query=username,
         current_page=0
@@ -187,7 +185,11 @@ async def send_character_delete_list(bot: Bot, event: Event, session: UserSessio
 
     # 分页处理
     total_scores = len(user_scores)
-    session.total_pages = math.ceil(total_scores / session.page_size)
+    session.total_pages = math.ceil(total_scores / session.page_size) if total_scores else 1
+
+    # 如果当前页超出范围，回到最后一页
+    if session.current_page >= session.total_pages:
+        session.current_page = max(0, session.total_pages - 1)
 
     start_idx = session.current_page * session.page_size
     end_idx = min((session.current_page + 1) * session.page_size, total_scores)
@@ -196,9 +198,10 @@ async def send_character_delete_list(bot: Bot, event: Event, session: UserSessio
     # 构建消息
     message_parts = [f"{username}已评级的角色有：\n"]
 
-    for i, (character_name, anime_title, score) in enumerate(current_scores, 1):
+    for i, (character_name, anime_id, score) in enumerate(current_scores, 1):
         global_index = start_idx + i
         level_name = character_score_manager.get_level_display_name(score)
+        anime_title = character_score_manager.resolve_anime_title(anime_id)
         message_parts.append(f"{global_index}. {character_name} - {anime_title} ({level_name})")
 
     # 添加分页信息

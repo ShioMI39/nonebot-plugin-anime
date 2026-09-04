@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .anime_downloader import ImageManager
 from ..config import CACHE_DIR, BGM_JSON, RESOURCE_DIR
-from .anime_filter import normalize_for_person
+from .anime_filter import normalize_for_person, get_display_title
 from .anime_time import get_season_range, is_date_in_season, get_current_season
 
 from nonebot import logger
@@ -39,7 +39,9 @@ class BGMDataManager:
                 return self.all_data
 
             with open(filepath, 'r', encoding='utf-8') as f:
-                self.all_data = json.load(f)
+                raw_data = json.load(f)
+
+            self.all_data = self._normalize_to_id_keys(raw_data)
 
             logger.success(f"成功加载 {len(self.all_data)} 条 BGM 数据")
             return self.all_data
@@ -48,6 +50,72 @@ class BGMDataManager:
             logger.opt(exception=True).error("读取 BGM 文件失败")
             self.all_data = {}
             return self.all_data
+
+    @staticmethod
+    def _normalize_to_id_keys(raw_data: Dict) -> Dict:
+        """把数据键统一为 str(条目id)"""
+        normalized: Dict = {}
+        merged = 0
+
+        def _score(info: Dict) -> int:
+            s = len(info.get('tags') or []) + len(info.get('characters') or []) * 2
+            s += len(info.get('aliases') or [])
+            staff = info.get('staff') or {}
+            s += sum(len(v) for v in staff.values() if isinstance(v, list))
+            prod = info.get('production') or {}
+            s += sum(len(v) for v in prod.values() if isinstance(v, list))
+            bi = info.get('basic_info') or {}
+            if (bi.get('chinese_title') or '').strip():
+                s += 3
+            if (bi.get('original_title') or '').strip():
+                s += 2
+            return s
+
+        for old_key, info in raw_data.items():
+            if not isinstance(info, dict):
+                continue
+
+            # 键将改为 id
+            bi = info.get('basic_info') or {}
+            if not ((bi.get('chinese_title') or '').strip()
+                    or (bi.get('original_title') or '').strip()
+                    or (info.get('title_cn') or '').strip()
+                    or (info.get('title_jp') or '').strip()):
+                bi['original_title'] = old_key
+                info['title_jp'] = old_key
+                info['basic_info'] = bi
+
+            anime_id = info.get('id')
+            if anime_id is None:
+                if old_key not in normalized:
+                    normalized[old_key] = info
+                continue
+
+            key = str(anime_id)
+            if key not in normalized:
+                normalized[key] = info
+                continue
+
+            base, extra = normalized[key], info
+            if _score(extra) > _score(base):
+                normalized[key] = extra
+                base, extra = extra, base
+            tags = {t.get('name'): t for t in (base.get('tags') or [])}
+            for t in extra.get('tags') or []:
+                name = t.get('name')
+                if name and (name not in tags or t.get('count', 0) > tags[name].get('count', 0)):
+                    tags[name] = t
+            base['tags'] = list(tags.values())
+            aliases = list(base.get('aliases') or [])
+            for a in extra.get('aliases') or []:
+                if a not in aliases:
+                    aliases.append(a)
+            base['aliases'] = aliases
+            merged += 1
+
+        if merged:
+            logger.warning(f"BGM 数据存在 {merged} 条重复 id，已按 id 合并")
+        return normalized
 
     def load_from_json(self, filename: str) -> Optional[Dict]:
         """从JSON文件加载数据"""
@@ -66,7 +134,7 @@ class BGMDataManager:
         return self.resource_dir / filename
 
     def update_anime_data(self, new_anime_data: Dict, anime_id: str = None, allow_add_new: bool = False) -> bool:
-        """更新番剧数据"""
+        """按 bgm 条目 id 更新番剧数据"""
         try:
             if not hasattr(self, 'all_data') or self.all_data is None:
                 self.load_all_data()
@@ -74,52 +142,30 @@ class BGMDataManager:
             if not anime_id:
                 anime_id = new_anime_data.get('id')
 
-            new_title_key = (
-                new_anime_data.get('title_cn')
-                or new_anime_data.get('basic_info', {}).get('chinese_title')
-                or new_anime_data.get('title_jp')
-                or new_anime_data.get('basic_info', {}).get('original_title')
-            )
-
-            if not new_title_key:
-                logger.warning("无法确定番剧标题键，跳过更新")
+            if anime_id is None:
+                logger.warning("无法确定番剧 id，跳过更新")
                 return False
 
-            existing_key = None
-            existing_by_id = False
+            key = str(anime_id)
 
-            if anime_id:
-                for title, info in self.all_data.items():
-                    if info.get('id') == anime_id:
-                        existing_key = title
-                        existing_by_id = True
-                        break
+            if key in self.all_data:
+                logger.info(f"更新番剧: id={key}")
 
-            if not existing_key and new_title_key in self.all_data:
-                existing_key = new_title_key
-
-            if existing_key:
-                logger.info(f"更新番剧: {existing_key}")
-
-                old_tags = {t['name']: t for t in self.all_data[existing_key].get('tags', [])}
+                old_tags = {t['name']: t for t in self.all_data[key].get('tags', [])}
                 for t in new_anime_data.get('tags', []):
                     old_tags[t['name']] = t
                 new_anime_data['tags'] = list(old_tags.values())
 
-                self.all_data[existing_key] = new_anime_data
-
-                if existing_key != new_title_key and not existing_by_id:
-                    self.all_data[new_title_key] = self.all_data.pop(existing_key)
-
+                self.all_data[key] = new_anime_data
                 return self.save_all_data(self.all_data)
 
             elif allow_add_new:
-                logger.info(f"添加新番剧: {new_title_key}")
-                self.all_data[new_title_key] = new_anime_data
+                logger.info(f"添加新番剧: id={key}")
+                self.all_data[key] = new_anime_data
                 return self.save_all_data(self.all_data)
 
             else:
-                logger.debug(f"未匹配到现有番剧: {new_title_key}")
+                logger.debug(f"未找到 id={key} 的现有番剧")
                 return False
 
         except Exception:
@@ -149,7 +195,7 @@ class BGMDataManager:
             return False
 
     def search_anime_by_keyword(self, keyword: str) -> List[Tuple[str, Dict]]:
-        """通过关键词搜索番剧"""
+        """通过关键词搜索番剧，返回 [(显示名, 条目), ...]"""
         results = []
 
         if not hasattr(self, 'all_data') or self.all_data is None:
@@ -161,20 +207,20 @@ class BGMDataManager:
 
         keyword_lower = keyword.lower()
 
-        for title, info in data.items():
-            basic_info = info.get('basic_info', {})
+        for dict_key, info in data.items():
+            display_title = get_display_title(info) or str(dict_key)
 
-            if keyword_lower in title.lower():
-                results.append((title, info))
+            if keyword_lower in display_title.lower():
+                results.append((display_title, info))
                 continue
 
-            if keyword_lower in basic_info.get('original_title', '').lower():
-                results.append((title, info))
+            if keyword_lower in (info.get('basic_info', {}).get('original_title', '') or '').lower():
+                results.append((display_title, info))
                 continue
 
             for alias in info.get('aliases', []):
                 if keyword_lower in alias.lower():
-                    results.append((title, info))
+                    results.append((display_title, info))
                     break
 
         logger.debug(f"搜索 '{keyword}' 找到 {len(results)} 条结果")
@@ -193,7 +239,7 @@ class BGMDataManager:
 
         cv_norm = normalize_for_person(cv_query)
 
-        for title, info in data.items():
+        for info in data.values():
             for character in info.get('characters', []):
                 cv_name = character.get('cv', '')
                 if cv_norm in normalize_for_person(cv_name):
@@ -215,11 +261,13 @@ class BGMDataManager:
 
         cv_norm = normalize_for_person(cv_name)
 
-        for title, info in data.items():
+        for dict_key, info in data.items():
+            anime_title = get_display_title(info) or '未知番剧'
             for character in info.get('characters', []):
                 if normalize_for_person(character.get('cv', '')) == cv_norm:
                     character_info = character.copy()
-                    character_info['anime_title'] = title
+                    character_info['anime_title'] = anime_title
+                    character_info['anime_id'] = str(dict_key)
                     results.append((character_info['original_name'], character_info))
 
         return results
@@ -237,7 +285,8 @@ class BGMDataManager:
 
         character_name_lower = character_name.lower()
 
-        for title, info in data.items():
+        for dict_key, info in data.items():
+            anime_title = get_display_title(info) or '未知番剧'
             for character in info.get('characters', []):
                 original_name = character.get('original_name', '')
                 translated_name = character.get('translated_name', '')
@@ -245,7 +294,8 @@ class BGMDataManager:
                 if (character_name_lower in original_name.lower()
                         or character_name_lower in translated_name.lower()):
                     character_info = character.copy()
-                    character_info['anime_title'] = title
+                    character_info['anime_title'] = anime_title
+                    character_info['anime_id'] = str(dict_key)
                     results.append((original_name, character_info))
 
         return results
@@ -256,11 +306,19 @@ class BGMDataManager:
             img_url, "cover", anime_id
         )
 
+    def get_display_name_by_id(self, anime_id, fallback: str = "") -> str:
+        """按条目 id 返回最新显示名"""
+        if anime_id is not None and str(anime_id):
+            info = self.all_data.get(str(anime_id))
+            if info:
+                return get_display_title(info) or str(anime_id)
+        return fallback or (str(anime_id) if anime_id is not None else "未知番剧")
+
     async def download_character_image(self, img_url: str, character_name: str,
-                                       anime_name: str) -> Optional[str]:
-        """下载角色图片"""
+                                       anime_id=None) -> Optional[str]:
+        """下载角色图片（缓存键使用 角色名 + 条目id）"""
         return await self.image_manager.download_image(
-            img_url, "character", character_name, anime_name
+            img_url, "character", character_name, str(anime_id) if anime_id is not None else None
         )
 
     async def create_anime_message(self, title: str, info: Dict) -> List[MessageSegment]:
@@ -356,7 +414,7 @@ class BGMDataManager:
         except ValueError:
             return results
 
-        for title, info in data.items():
+        for dict_key, info in data.items():
             basic_info = info.get('basic_info', {})
 
             media_type = basic_info.get('media_type', '')
@@ -368,7 +426,7 @@ class BGMDataManager:
                 continue
 
             if is_date_in_season(start_date, season_start, season_end):
-                results.append((title, info))
+                results.append((get_display_title(info) or str(dict_key), info))
 
         return results
 

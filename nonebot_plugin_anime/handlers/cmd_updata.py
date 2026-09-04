@@ -39,6 +39,9 @@ async def handle_anime_bgmget(bot: Bot, event: Event, args: Message = CommandArg
         if anime_data:
             logger.info(f"成功获取番剧数据: {anime_data.get('title_cn') or anime_data.get('title_jp')}")
 
+            # 数据键为条目 id，先判断该 id 是否已存在
+            existed = str(args_text) in bgm_manager.load_all_data()
+
             success = bgm_manager.update_anime_data(anime_data, args_text, allow_add_new=True)
             if success:
                 # 显示更新/添加后的数据
@@ -46,20 +49,18 @@ async def handle_anime_bgmget(bot: Bot, event: Event, args: Message = CommandArg
                 message_parts = await bgm_manager.create_anime_message(title, anime_data)
                 await bot.send(event, message_parts)
 
-                # 检查是新添加还是更新
+                # 数据键为条目 id：新增前若已存在同 id 记录则为更新
                 all_data = bgm_manager.load_all_data()
-                if title in all_data:
-                    await anime_bgmget.send(f"已成功更新番剧数据")
+                if str(args_text) in all_data:
+                    stored_title = (anime_data.get('title_cn')
+                                    or (anime_data.get('basic_info') or {}).get('chinese_title')
+                                    or anime_data.get('title_jp') or '未知')
+                    if existed:
+                        await anime_bgmget.send(f"已成功更新番剧数据")
+                    else:
+                        await anime_bgmget.send(f"已成功添加新番剧: {stored_title}")
                 else:
-                    # 尝试查找新的标题键
-                    found = False
-                    for key in all_data.keys():
-                        if all_data[key].get('id') == args_text:
-                            await anime_bgmget.send(f"已成功添加新番剧: {key}")
-                            found = True
-                            break
-                    if not found:
-                        await anime_bgmget.send(f"操作成功，但标题可能已变更")
+                    await anime_bgmget.finish("操作失败，可能是数据格式问题")
             else:
                 await anime_bgmget.finish("操作失败，可能是数据格式问题")
         else:
@@ -135,12 +136,12 @@ async def handle_anime_getmonth(args: Message = CommandArg()):
     added = 0
     updated = 0
 
-    for title, data in new_anime.items():
-        if title in existing_data:
+    for anime_id, data in new_anime.items():
+        if anime_id in existing_data:
             updated += 1
         else:
             added += 1
-        existing_data[title] = data
+        existing_data[anime_id] = data
 
     if bgm_manager.save_all_data(existing_data):
         await anime_getmonth.send(
@@ -190,12 +191,12 @@ async def handle_anime_bgmmonth(args: Message = CommandArg()):
 
     added = 0
     updated = 0
-    for title, data in new_anime.items():
-        if title in existing_data:
+    for anime_id, data in new_anime.items():
+        if anime_id in existing_data:
             updated += 1
         else:
             added += 1
-        existing_data[title] = data
+        existing_data[anime_id] = data
 
     if bgm_manager.save_all_data(existing_data):
         await anime_bgmmonth.finish(

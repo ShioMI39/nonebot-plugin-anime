@@ -2,7 +2,7 @@ import os
 from typing import Dict, List, Tuple
 from ..config import STAFF_ROLE_MAPPING, FILTER_KEYWORDS_LOWER
 from ..core import bgm_manager
-from ..core.anime_filter import filter_anime, parse_score_value
+from ..core.anime_filter import filter_anime, parse_score_value, get_display_title
 from ..core.anime_session import get_user_session, set_session, cleanup_old_sessions
 from ..core.anime_formatting import format_search_results_page, format_cv_search_results_page, format_cv_select_page, format_char_search_results_page
 from ..core.anime_permissons import is_private_or_allowed_group
@@ -201,8 +201,9 @@ async def create_character_detail_message(character: Dict, anime_title: str) -> 
     image_url = character.get('image_url')
     if image_url:
         original_name = character.get('original_name', 'unknown')
+        anime_id = character.get('anime_id')
         image_path = await bgm_manager.download_character_image(
-            image_url, original_name, anime_title
+            image_url, original_name, anime_id
         )
         if image_path:
             try:
@@ -398,18 +399,13 @@ async def handle_anime_bgmlist(bot: Bot, event: Event, args: Message = CommandAr
         all_data = bgm_manager.load_all_data()
         fuzzy_results = []
 
-        for title, info in all_data.items():
+        for dict_key, info in all_data.items():
             # 模糊匹配
+            display_title = get_display_title(info) or str(dict_key)
+            candidates = [display_title] + [a for a in info.get('aliases', []) if a]
             keywords = anime_name.split()
-            if all(keyword in title for keyword in keywords):
-                fuzzy_results.append((title, info))
-            else:
-                # 检查别名
-                aliases = info.get('aliases', [])
-                for alias in aliases:
-                    if all(keyword in alias for keyword in keywords):
-                        fuzzy_results.append((title, info))
-                        break
+            if any(all(keyword in candidate for keyword in keywords) for candidate in candidates):
+                fuzzy_results.append((display_title, info))
 
         if fuzzy_results:
             results = fuzzy_results

@@ -2,13 +2,12 @@ import json
 
 from typing import Dict, List, Tuple, Optional
 from ..config import SCORE_JSON, CHARACTER_SCORE_JSON
+from .anime_filter import get_display_title
 
 from nonebot import logger
 
 
-
-
-# ==================== 用户评分管理器 ====================
+# ==================== 番剧评分管理器 ====================
 class UserScoreManager:
     """用户评分管理器"""
 
@@ -38,46 +37,47 @@ class UserScoreManager:
             logger.opt(exception=True).error("保存评分数据失败")
             return False
 
-    def add_user_score(self, anime_title: str, username: str, score: float) -> bool:
+    def add_user_score(self, anime_id, username: str, score: float) -> bool:
         """添加用户评分"""
         try:
-            if anime_title not in self.scores:
-                self.scores[anime_title] = {}
-            self.scores[anime_title][username] = score
-            logger.info(f"用户 {username} 对《{anime_title}》评分: {score}")
+            aid = str(anime_id)
+            if aid not in self.scores:
+                self.scores[aid] = {}
+            self.scores[aid][username] = score
+            logger.info(f"用户 {username} 对条目 {aid} 评分: {score}")
             return self.save_scores()
         except Exception:
             logger.opt(exception=True).error("添加用户评分失败")
             return False
 
-    def get_user_scores_by_anime(self, anime_title: str) -> Dict[str, float]:
-        """获取番剧的所有用户评分"""
-        return self.scores.get(anime_title, {})
+    def get_user_scores_by_anime(self, anime_id) -> Dict[str, float]:
+        """获取条目的所有用户评分"""
+        return self.scores.get(str(anime_id), {})
 
     def search_scores_by_user_and_score(self, username: str, target_score: float) -> List[str]:
-        """搜索用户给的特定分数的所有番剧"""
+        """搜索用户给的特定分数的所有番剧，返回条目 id 列表"""
         results = []
 
-        for anime_title, user_scores in self.scores.items():
+        for anime_id, user_scores in self.scores.items():
             for user, score in user_scores.items():
                 if user == username and float(score) == target_score:
-                    results.append(anime_title)
+                    results.append(anime_id)
                     break
 
         return results
 
     def search_scores_by_user_and_score_range(self, username: str, min_score: float, max_score: float) -> Dict[
         float, List[str]]:
-        """搜索用户给的特定分数范围内的所有番剧，按分数分组"""
+        """搜索用户给的特定分数范围内的所有番剧，按分数分组，值为条目 id 列表"""
         results = {}
 
-        for anime_title, user_scores in self.scores.items():
+        for anime_id, user_scores in self.scores.items():
             for user, score in user_scores.items():
                 if user == username and min_score <= float(score) <= max_score:
                     score_float = float(score)
                     if score_float not in results:
                         results[score_float] = []
-                    results[score_float].append(anime_title)
+                    results[score_float].append(anime_id)
 
         # 按分数从高到低排序
         return dict(sorted(results.items(), key=lambda x: x[0], reverse=True))
@@ -90,19 +90,20 @@ class UserScoreManager:
         score_list = [f"{user}{score}" for user, score in user_scores.items()]
         return "，".join(score_list)
 
-    def get_sorted_user_scores(self, anime_title: str) -> List[Tuple[str, float]]:
-        """获取番剧的用户评分并按分数排序（从高到低）"""
-        user_scores = self.get_user_scores_by_anime(anime_title)
+    def get_sorted_user_scores(self, anime_id) -> List[Tuple[str, float]]:
+        """获取条目的用户评分并按分数排序（从高到低）"""
+        user_scores = self.get_user_scores_by_anime(anime_id)
         return sorted(user_scores.items(), key=lambda x: x[1], reverse=True)
 
-    def delete_user_score(self, anime_title: str, username: str) -> bool:
-        """删除特定用户对特定番剧的评分"""
+    def delete_user_score(self, anime_id, username: str) -> bool:
+        """删除特定用户对特定条目的评分"""
         try:
-            if anime_title in self.scores and username in self.scores[anime_title]:
-                del self.scores[anime_title][username]
-                # 如果这个番剧没有其他评分了，删除整个番剧条目
-                if not self.scores[anime_title]:
-                    del self.scores[anime_title]
+            aid = str(anime_id)
+            if aid in self.scores and username in self.scores[aid]:
+                del self.scores[aid][username]
+                # 如果这个条目没有其他评分了，删除整个条目
+                if not self.scores[aid]:
+                    del self.scores[aid]
                 return self.save_scores()
             return False
         except Exception:
@@ -110,25 +111,25 @@ class UserScoreManager:
             return False
 
     def get_all_scores_by_user(self, username: str) -> List[Tuple[str, float]]:
-        """获取特定用户的所有评分，按分数从高到低排序"""
+        """获取特定用户的所有评分（(条目id, 分数)），按分数从高到低排序"""
         user_scores = []
-        for anime_title, scores_dict in self.scores.items():
+        for anime_id, scores_dict in self.scores.items():
             if username in scores_dict:
-                user_scores.append((anime_title, scores_dict[username]))
+                user_scores.append((anime_id, scores_dict[username]))
         return sorted(user_scores, key=lambda x: x[1], reverse=True)
 
     def delete_all_scores_by_user(self, username: str) -> bool:
         """删除特定用户的所有评分"""
         try:
             anime_to_remove = []
-            for anime_title, scores_dict in self.scores.items():
+            for anime_id, scores_dict in self.scores.items():
                 if username in scores_dict:
                     del scores_dict[username]
                     if not scores_dict:
-                        anime_to_remove.append(anime_title)
+                        anime_to_remove.append(anime_id)
 
-            for anime_title in anime_to_remove:
-                del self.scores[anime_title]
+            for anime_id in anime_to_remove:
+                del self.scores[anime_id]
 
             logger.info(f"已删除用户 {username} 的所有评分")
             return self.save_scores()
@@ -139,7 +140,7 @@ class UserScoreManager:
 
 # ==================== 角色评级管理器 ====================
 class CharacterScoreManager:
-    """角色评级管理器 - 修复版"""
+    """角色评级管理器"""
 
     def __init__(self, bgm_manager):
         self.character_score_file = CHARACTER_SCORE_JSON
@@ -162,7 +163,7 @@ class CharacterScoreManager:
                 with open(self.character_score_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     logger.info(f"加载角色评分数据（{len(data)} 条）")
-                    return self.validate_and_fix_data(data)
+                    return data if isinstance(data, dict) else {}
             else:
                 logger.warning("角色评分文件不存在，创建空数据")
                 return {}
@@ -170,43 +171,15 @@ class CharacterScoreManager:
             logger.opt(exception=True).error("加载角色评级数据失败")
             return {}
 
-    def validate_and_fix_data(self, data: Dict) -> Dict:
-        fixed_data = {}
-        needs_fix = False
+    # ---------- 显示名解析辅助 ----------
 
-        for character_key, character_data in data.items():
-            if isinstance(character_data, dict) and 'scores' in character_data:
-                fixed_data[character_key] = character_data
-            else:
-                needs_fix = True
-                if '||' in character_key:
-                    character_name, anime_title = character_key.split('||', 1)
-                else:
-                    character_name = character_key
-                    anime_title = "未知番剧"
-
-                fixed_data[character_key] = {
-                    'character_name': character_name,
-                    'anime_title': anime_title,
-                    'image_url': None,
-                    'scores': character_data,
-                }
-
-        if needs_fix:
-            self.save_scores_immediate(fixed_data)
-
-        return fixed_data
-
-    def save_scores_immediate(self, data: Dict) -> bool:
-        """保存数据"""
-        try:
-            self.character_score_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.character_score_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            return True
-        except Exception:
-            logger.opt(exception=True).error("保存角色评级数据失败")
-            return False
+    def resolve_anime_title(self, anime_id, fallback: str = "") -> str:
+        """按条目 id 返回最新显示名"""
+        if anime_id is not None and str(anime_id):
+            info = self.bgm_manager.all_data.get(str(anime_id))
+            if info:
+                return get_display_title(info) or str(anime_id)
+        return fallback or (str(anime_id) if anime_id is not None else "未知番剧")
 
     def save_scores(self) -> bool:
         """保存角色评级数据"""
@@ -220,57 +193,67 @@ class CharacterScoreManager:
             logger.opt(exception=True).error("保存角色评级数据失败")
             return False
 
-    def add_character_score(self, character_name: str, anime_title: str, username: str, score: int, image_url: str = None) -> bool:
+    def find_character_image_url(self, character_name: str, anime_id) -> Optional[str]:
+        """在指定条目中查找角色图片URL"""
+        try:
+            info = self.bgm_manager.all_data.get(str(anime_id)) if anime_id is not None else None
+            if not info:
+                return None
+
+            characters = info.get('characters', [])
+
+            # 1. 精确匹配原名或译名
+            for c in characters:
+                if c.get('original_name') == character_name or c.get('translated_name') == character_name:
+                    return c.get('image_url')
+
+            # 2. 包含关系（原名）
+            for c in characters:
+                name = c.get('original_name', '')
+                if name and (character_name in name or name in character_name):
+                    return c.get('image_url')
+
+            # 3. 任意角色兜底
+            if characters:
+                return characters[0].get('image_url')
+
+            return None
+        except Exception:
+            logger.warning("查找角色图片URL失败")
+            return None
+
+    def add_character_score(self, character_name: str, anime_id, anime_title: str = "",
+                            username: str = "", score: int = 0, image_url: str = None) -> bool:
         """添加角色评级"""
         try:
-            character_key = f"{character_name}||{anime_title}"
+            if anime_id is None or not str(anime_id):
+                logger.warning(f"角色评级: 缺少条目 id，跳过 {character_name}")
+                return False
+
+            aid = str(anime_id)
+            character_key = f"{character_name}||{aid}"
 
             if character_key not in self.scores:
                 if image_url is None:
-                    image_url = self.find_character_image_url(character_name, anime_title)
+                    image_url = self.find_character_image_url(character_name, aid)
 
                 self.scores[character_key] = {
                     'character_name': character_name,
-                    'anime_title': anime_title,
+                    'anime_id': aid,
+                    'anime_title': self.resolve_anime_title(aid, anime_title),
                     'image_url': image_url,
                     'scores': {}
                 }
 
             self.scores[character_key]['scores'][username] = score
-            logger.info(f"角色评分: {character_name}（{anime_title}）→ {username}: {score}")
+            logger.info(f"角色评分: {character_name}（条目{aid}）→ {username}: {score}")
             return self.save_scores()
         except Exception:
             logger.opt(exception=True).error("添加角色评级失败")
             return False
 
-    def find_character_image_url(self, character_name: str, anime_title: str) -> Optional[str]:
-        """查找角色图片URL"""
-        try:
-            results = self.bgm_manager.search_characters_by_name(character_name)
-
-            for found_char_name, char_info in results:
-                result_anime_title = char_info.get('anime_title', '')
-                if (result_anime_title == anime_title
-                        and found_char_name == character_name):
-                    return char_info.get('image_url')
-
-            for found_char_name, char_info in results:
-                result_anime_title = char_info.get('anime_title', '')
-                if (character_name in found_char_name or found_char_name in character_name
-                        or anime_title in result_anime_title):
-                    return char_info.get('image_url')
-
-            if results:
-                return results[0][1].get('image_url')
-
-            return None
-
-        except Exception:
-            logger.warning("查找角色图片URL失败")
-            return None
-
     def get_character_scores_by_user(self, username: str) -> Dict[str, List[Tuple[str, str, int, str]]]:
-        """获取特定用户的所有角色评级，按等级分组（包含图片URL）"""
+        """获取特定用户的所有角色评级，按等级分组"""
         user_scores = {
             5: [],  # 夯
             4: [],  # 顶级
@@ -284,17 +267,17 @@ class CharacterScoreManager:
             if username in scores_dict:
                 score = scores_dict[username]
                 character_name = character_data['character_name']
-                anime_title = character_data['anime_title']
+                anime_id = character_data.get('anime_id', '')
                 image_url = character_data.get('image_url')
 
-                user_scores[score].append((character_name, anime_title, score, image_url))
+                user_scores[score].append((character_name, anime_id, score, image_url))
 
         return user_scores
 
-    def delete_character_score(self, character_name: str, anime_title: str, username: str) -> bool:
+    def delete_character_score(self, character_name: str, anime_id, username: str) -> bool:
         """删除特定用户对特定角色的评级"""
         try:
-            character_key = f"{character_name}||{anime_title}"
+            character_key = f"{character_name}||{anime_id}"
 
             if character_key in self.scores and username in self.scores[character_key]['scores']:
                 del self.scores[character_key]['scores'][username]
@@ -320,8 +303,8 @@ class CharacterScoreManager:
             if username in scores_dict:
                 score = scores_dict[username]
                 character_name = character_data['character_name']
-                anime_title = character_data['anime_title']
-                user_scores.append((character_name, anime_title, score))
+                anime_id = character_data.get('anime_id', '')
+                user_scores.append((character_name, anime_id, score))
 
         return sorted(user_scores, key=lambda x: x[2], reverse=True)
 
@@ -362,8 +345,8 @@ class CharacterScoreManager:
 
         # 按等级分组
         level_groups = {5: [], 4: [], 3: [], 2: [], 1: []}
-        for char_name, anime_title, score in user_scores:
-            level_groups[score].append((char_name, anime_title))
+        for char_name, anime_id, score in user_scores:
+            level_groups[score].append((char_name, anime_id))
 
         # 从高到低显示等级
         for level in [5, 4, 3, 2, 1]:
@@ -373,7 +356,8 @@ class CharacterScoreManager:
                 message_parts.append(f"{level_name}：")
 
                 # 为每个角色添加编号
-                for i, (char_name, anime_title) in enumerate(characters, 1):
+                for i, (char_name, anime_id) in enumerate(characters, 1):
+                    anime_title = self.resolve_anime_title(anime_id)
                     message_parts.append(f"{i}. {char_name}（{anime_title}）")
 
                 # 等级之间添加空行
