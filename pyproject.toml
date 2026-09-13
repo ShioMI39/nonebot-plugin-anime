@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-anime"
-version = "1.1.0"
+version = "1.1.1"
 description = "Bangumi 番剧查询机器人插件"
 requires-python = ">=3.9"
 license = "MIT"
