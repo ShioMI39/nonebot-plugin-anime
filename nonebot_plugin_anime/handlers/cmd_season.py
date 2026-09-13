@@ -1,12 +1,14 @@
 from datetime import datetime
+from typing import List
 from ..core import bgm_manager
 from ..core.anime_session import set_session, get_user_session
 from ..core.anime_formatting import format_season_results_page, format_week_results_page
 from ..core.anime_time import get_current_season, parse_single_date, validate_year
 from ..core.anime_permissons import is_private_or_allowed_group
 from ..config import MONTH_NAMES
-from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
+from nonebot import on_command, logger
+from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent
+from nonebot.exception import ActionFailed
 from nonebot.rule import Rule, to_me
 from nonebot.params import CommandArg
 
@@ -17,9 +19,101 @@ anime_view_week = on_command("anime view week", aliases={"星期查看"}, priori
 anime_view_today = on_command("anime view today", aliases={"今天有什么番"}, priority=5, rule=Rule(is_private_or_allowed_group))
 
 
+# ==================== 合并转发辅助 ====================
+FORWARD_NODE_LINES = 10  # 每个合并转发节点包含的番剧行数
+
+
+def _anime_line_text(anime_info) -> str:
+    """番剧列表单行文本：显示名 + 评分"""
+    basic_info = anime_info.get('basic_info', {})
+    chinese_title = basic_info.get('chinese_title', '').strip()
+    original_title = basic_info.get('original_title', '').strip()
+    display_title = chinese_title if chinese_title else original_title
+    score = anime_info.get('rating', {}).get('score')
+    score_text = f" 评分：{score}" if score else " 评分：暂无"
+    return f"{display_title}{score_text}"
+
+
+async def _send_nodes(bot: Bot, event: Event, nodes: list) -> bool:
+    """调用协议端 API 发送合并转发；失败返回 False"""
+    try:
+        if isinstance(event, GroupMessageEvent):
+            await bot.call_api("send_group_forward_msg", group_id=event.group_id, messages=nodes)
+        else:
+            await bot.call_api("send_private_forward_msg", user_id=int(event.get_user_id()), messages=nodes)
+        return True
+    except ActionFailed:
+        logger.warning("合并转发发送失败（协议端不支持或超出限制），降级为分页文本")
+        return False
+    except Exception:
+        logger.opt(exception=True).warning("合并转发发送异常，降级为分页文本")
+        return False
+
+
+def _bot_uin(bot: Bot) -> int:
+    try:
+        return int(bot.self_id)
+    except (TypeError, ValueError):
+        return 10000
+
+
+async def _send_forward_nodes(bot: Bot, event: Event, title: str, lines: List[str]) -> bool:
+    """把文本行按每节点 FORWARD_NODE_LINES 行打包成合并转发发送。
+
+    编号由调用方写入行首，全局连续，与会话 search_results 索引一一对应，
+    因此转发后用户仍可输入编号查看详情。
+    发送失败（协议端不支持/超限）返回 False，由调用方降级为分页文本。
+    """
+    lines = [line for line in lines if line]
+    if not lines:
+        return False
+
+    uin = _bot_uin(bot)
+    total = len(lines)
+    nodes = []
+    for start in range(0, total, FORWARD_NODE_LINES):
+        chunk = lines[start:start + FORWARD_NODE_LINES]
+        if total > FORWARD_NODE_LINES:
+            nickname = f"{title}（{start + 1}-{start + len(chunk)}）"
+        else:
+            nickname = title
+        nodes.append(
+            MessageSegment.node_custom(
+                user_id=uin,
+                nickname=nickname[:60],
+                content=Message("\n".join(chunk)),
+            )
+        )
+
+    return await _send_nodes(bot, event, nodes)
+
+
+async def _send_forward_sections(bot: Bot, event: Event, sections: List[tuple]) -> bool:
+    """按「分组 = 气泡」构造合并转发：sections 为 [(节点昵称, [行, ...]), ...]。
+
+    用于星期查看：每个星期一个气泡，编号仍由调用方全局连续编号。
+    """
+    cleaned = [(name, [line for line in lines if line]) for name, lines in sections]
+    cleaned = [(name, lines) for name, lines in cleaned if lines]
+    if not cleaned:
+        return False
+
+    uin = _bot_uin(bot)
+    nodes = [
+        MessageSegment.node_custom(
+            user_id=uin,
+            nickname=str(name)[:60],
+            content=Message("\n".join(lines)),
+        )
+        for name, lines in cleaned
+    ]
+
+    return await _send_nodes(bot, event, nodes)
+
+
 # ==================== 番剧查看处理 ====================
 @anime_view.handle()
-async def handle_anime_view(event: Event, arg: Message = CommandArg()):
+async def handle_anime_view(bot: Bot, event: Event, arg: Message = CommandArg()):
     """处理番剧季度查看指令"""
 
     args = arg.extract_plain_text().strip()
@@ -56,7 +150,20 @@ async def handle_anime_view(event: Event, arg: Message = CommandArg()):
 
     season_animes.sort(key=sort_key, reverse=True)
 
-    # 设置会话
+    # 全量文本行（编号全局连续，与 search_results 索引一一对应，保证编号交互可用）
+    lines = []
+    for i, (anime_title, anime_info) in enumerate(season_animes, 1):
+        basic_info = anime_info.get('basic_info', {})
+        chinese_title = basic_info.get('chinese_title', '').strip()
+        original_title = basic_info.get('original_title', '').strip()
+        display_title = chinese_title if chinese_title else original_title
+        broadcast_day = basic_info.get('broadcast_day', '').strip()
+        day_info = f"【{broadcast_day}】" if broadcast_day else ""
+        score = anime_info.get('rating', {}).get('score')
+        score_text = f" 评分：{score}" if score else " 评分：暂无"
+        lines.append(f"{i}. {display_title}{day_info}{score_text}")
+
+    # 会话保存完整列表：只有一页，编号可继续用于查看详情
     set_session(
         event,
         'view_season',  # 会话类型
@@ -64,21 +171,27 @@ async def handle_anime_view(event: Event, arg: Message = CommandArg()):
         search_type="季度查看",
         search_query=f"{year}-{month:02d}",
         current_page=0,
-        page_size=20,  # 季度查看每页显示20条
+        page_size=len(season_animes),  # 一次性全量输出
+        total_pages=1,
         view_year=year,
         view_month=month,
         view_month_name=month_name
     )
 
-    session = get_user_session(event)
-
-    # 格式化输出第一页
-    selection_msg = format_season_results_page(session, f"{year}年{month_name}番剧")
-    await anime_view.send(selection_msg)
+    title = f"{year}年{month_name}番剧"
+    if await _send_forward_nodes(bot, event, title, lines):
+        await anime_view.send(f"共 {len(season_animes)} 部，输入编号查看详情（1~{len(season_animes)}）")
+    else:
+        # 降级：合并转发不可用时回退到原来的分页文本
+        session = get_user_session(event)
+        session.page_size = 20
+        session.total_pages = (len(season_animes) + 19) // 20
+        selection_msg = format_season_results_page(session, f"{year}年{month_name}番剧")
+        await anime_view.send(selection_msg)
 
 
 @anime_view_week.handle()
-async def handle_anime_view_week(event: Event, arg: Message = CommandArg()):
+async def handle_anime_view_week(bot: Bot, event: Event, arg: Message = CommandArg()):
     """处理番剧星期查看指令"""
 
     args = arg.extract_plain_text().strip()
@@ -159,7 +272,27 @@ async def handle_anime_view_week(event: Event, arg: Message = CommandArg()):
 
         search_query = f"{year}-{month:02d} 所有星期"
 
-    # 设置会话
+    # 全量文本行（编号全局连续，与 search_results 索引一一对应，保证编号交互可用）
+    lines = []
+    sections = []
+    if target_weekday:
+        lines = [f"{i}. {_anime_line_text(anime_info)}"
+                 for i, (anime_title, anime_info) in enumerate(filtered_animes, 1)]
+    else:
+        # 按星期分割气泡：每个星期一个转发节点，编号跨节点全局连续
+        index = 0
+        for weekday in ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日', '其他']:
+            group = weekday_groups.get(weekday) or []
+            if not group:
+                continue
+            group_lines = [f"{year}年{month_name}季度番剧 {weekday}"]
+            for anime_title, anime_info in group:
+                index += 1
+                group_lines.append(f"{index}. {_anime_line_text(anime_info)}")
+
+            sections.append((" ", group_lines))
+
+    # 会话保存完整列表：只有一页，编号可继续用于查看详情
     set_session(
         event,
         'view_week',  # 会话类型
@@ -167,19 +300,33 @@ async def handle_anime_view_week(event: Event, arg: Message = CommandArg()):
         search_type="星期查看",
         search_query=search_query,
         current_page=0,
-        page_size=30,  # 星期查看每页显示30条
+        page_size=len(filtered_animes),  # 一次性全量输出
+        total_pages=1,
         view_year=year,
         view_month=month,
         view_month_name=month_name,
         view_target_weekday=target_weekday,
-        view_weekday_groups=weekday_groups  # 保留分组信息用于显示
+        view_weekday_groups=weekday_groups  # 保留分组信息（降级分页时使用）
     )
 
-    session = get_user_session(event)
+    if target_weekday:
+        title = f"{year}年{month_name}季度番剧 {target_weekday}"
+    else:
+        title = f"{year}年{month_name}季度番剧"
 
-    # 格式化输出第一页
-    selection_msg = format_week_results_page(session)
-    await anime_view_week.send(selection_msg)
+    if target_weekday:
+        forward_ok = await _send_forward_nodes(bot, event, title, lines)
+    else:
+        forward_ok = await _send_forward_sections(bot, event, sections)
+
+    if forward_ok:
+        await anime_view_week.send(f"共 {len(filtered_animes)} 部，输入编号查看详情（1~{len(filtered_animes)}）")
+    else:
+        # 降级：合并转发不可用时回退到原来的分页文本
+        session = get_user_session(event)
+        session.page_size = 30
+        session.total_pages = (len(filtered_animes) + 29) // 30
+        await anime_view_week.send(format_week_results_page(session))
 
 
 @anime_view_today.handle()
@@ -257,6 +404,3 @@ async def handle_anime_view_today(event: Event):
         output_lines.append("输入编号查看详情")
 
     await anime_view_today.send("\n".join(output_lines))
-
-
-

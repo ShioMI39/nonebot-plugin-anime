@@ -11,18 +11,18 @@ from ..config import MIN_YEAR
 # ==================== 季度范围处理函数 ====================
 def get_season_range(year: int, month: int) -> Tuple[str, str]:
     """根据年份和月份获取季度范围"""
-    if month == 1:  # 1月季度：12月10日到3月9日
-        start_date = f"{year - 1}-12-10"
-        end_date = f"{year}-03-09"
-    elif month == 4:  # 4月季度：3月10日到6月9日
-        start_date = f"{year}-03-10"
-        end_date = f"{year}-06-09"
-    elif month == 7:  # 7月季度：6月10日到9月9日
-        start_date = f"{year}-06-10"
-        end_date = f"{year}-09-09"
-    elif month == 10:  # 10月季度：9月10日到12月9日
-        start_date = f"{year}-09-10"
-        end_date = f"{year}-12-09"
+    if month == 1:  # 1月季度：12月20日到3月19日
+        start_date = f"{year - 1}-12-20"
+        end_date = f"{year}-03-19"
+    elif month == 4:  # 4月季度：3月20日到6月19日
+        start_date = f"{year}-03-20"
+        end_date = f"{year}-06-19"
+    elif month == 7:  # 7月季度：6月20日到9月19日
+        start_date = f"{year}-06-20"
+        end_date = f"{year}-09-19"
+    elif month == 10:  # 10月季度：9月20日到12月19日
+        start_date = f"{year}-09-20"
+        end_date = f"{year}-12-19"
     else:
         raise ValueError("月份必须是1、4、7、10中的一个")
 
@@ -235,3 +235,21 @@ def get_current_season() -> Tuple[int, int]:
         if current_month == 12 and current_day > 9:
             return current_year + 1, 1
         return current_year, 10
+
+# ==================== 星期写法归一化 ====================
+WEEKDAY_MAPPING = {
+    '星期一': '星期一', '周一': '星期一', '礼拜一': '星期一',
+    '星期二': '星期二', '周二': '星期二', '礼拜二': '星期二',
+    '星期三': '星期三', '周三': '星期三', '礼拜三': '星期三',
+    '星期四': '星期四', '周四': '星期四', '礼拜四': '星期四',
+    '星期五': '星期五', '周五': '星期五', '礼拜五': '星期五',
+    '星期六': '星期六', '周六': '星期六', '礼拜六': '星期六',
+    '星期日': '星期日', '周日': '星期日', '星期天': '星期日', '礼拜天': '星期日',
+}
+
+
+def normalize_weekday(text: str) -> Optional[str]:
+    """把「周一/礼拜一/星期天」等写法归一化成「星期一」；无法识别返回 None"""
+    if not text:
+        return None
+    return WEEKDAY_MAPPING.get(str(text).strip())

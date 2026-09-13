@@ -3,7 +3,7 @@ from .anime_data import BGMDataManager
 from .anime_tag import TagManager
 from .anime_score import UserScoreManager, CharacterScoreManager
 from .anime_permissons import group_permission_manager
-from .anime_image import CharacterScoreImageGenerator, AnimeScoreImageGenerator
+from .anime_image import CharacterScoreImageGenerator, AnimeScoreImageGenerator, SeasonPosterGenerator
 from .anime_api import BangumiAPIClient
 
 # 1. 图片管理器
@@ -28,6 +28,9 @@ bgm_api = BangumiAPIClient()
 character_image_generator = CharacterScoreImageGenerator(bgm_manager, character_score_manager)
 anime_score_image_generator = AnimeScoreImageGenerator(bgm_manager, user_score_manager)
 
+# 8. 季度/星期海报生成器（依赖 BGMDataManager）
+season_poster_generator = SeasonPosterGenerator(bgm_manager)
+
 
 __all__ = [
     "image_manager",
@@ -39,4 +42,5 @@ __all__ = [
     "group_permission_manager",
     "character_image_generator",
     "anime_score_image_generator",
+    "season_poster_generator",
 ]

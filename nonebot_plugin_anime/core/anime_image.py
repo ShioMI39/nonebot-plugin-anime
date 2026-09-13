@@ -788,3 +788,211 @@ class AnimeScoreImageGenerator:
                 y_offset = (target_size - height) // 2
                 final_image.paste(image, (x_offset, y_offset))
                 return final_image
+
+
+# ==================== 番剧季度/星期海报生成器 ====================
+class SeasonPosterGenerator:
+    """番剧绘制成卡片列表长图"""
+
+    PER_IMAGE = 10
+
+    PAD = 36
+    LABEL_H = 96
+    COVER_W, COVER_H = 120, 168
+    ROW_H = COVER_H + 16
+    TEXT_X = PAD + COVER_W + 26
+    TEXT_W = 642
+    W = PAD * 2 + COVER_W + 26 + TEXT_W
+
+    # 行右上角编号：固定尺寸底块 + 居中编号
+    NUM_BOX_W, NUM_BOX_H = 58, 36
+    NUM_BG = (224, 224, 224)
+    NUM_FG = (60, 60, 60)
+    NUM_SIZE = 26
+    NUM_OFFSET_Y = 8
+
+    INK = (36, 36, 36)
+    SUB = (136, 136, 136)
+    META_FG = (90, 90, 90)
+    LINE = (234, 234, 234)
+    SCORE_FG = (100, 100, 100)
+    CHIP_BG = (243, 244, 246)
+    CHIP_FG = (96, 100, 108)
+    MAX_TAGS = 5
+
+    # 右栏各行相对行顶的偏移
+    NAME_Y, JP_Y, META_Y, TAG_Y, SCORE_Y = 6, 40, 66, 98, 138
+    SCORE_LABEL = 'bgm评分'
+
+    def __init__(self, bgm_manager: BGMDataManager):
+        self.bgm_manager = bgm_manager
+        self.cache_dir = bgm_manager.cache_dir
+
+    @staticmethod
+    def _font(size: int):
+        return ImageFont.truetype(str(FONTS_DIR / "SourceHanSansSC-Bold-2.otf"), size)
+
+    # ---------- 基础绘制 ----------
+    @staticmethod
+    def _rounded(image: Image.Image, radius: int) -> Image.Image:
+        mask = Image.new('L', image.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            [0, 0, image.size[0] - 1, image.size[1] - 1], radius=radius, fill=255)
+        out = image.convert('RGBA')
+        out.putalpha(mask)
+        return out
+
+    @staticmethod
+    def _fit_text(draw, text: str, f, max_w: int) -> str:
+        """单行截断，超出宽度加省略号"""
+        if draw.textlength(text, font=f) <= max_w:
+            return text
+        t = text
+        while t and draw.textlength(t + '…', font=f) > max_w:
+            t = t[:-1]
+        return t + '…'
+
+    @staticmethod
+    def _fit_cover(image: Image.Image, w: int, h: int) -> Image.Image:
+        """按比例缩放并居中裁切封面"""
+        iw, ih = image.size
+        if iw <= 0 or ih <= 0:
+            return Image.new('RGB', (w, h), (200, 200, 200))
+        scale = max(w / iw, h / ih)
+        nw, nh = max(1, int(iw * scale + 0.5)), max(1, int(ih * scale + 0.5))
+        resized = image.resize((nw, nh), Image.Resampling.LANCZOS)
+        left, top = (nw - w) // 2, (nh - h) // 2
+        return resized.crop((left, top, left + w, top + h))
+
+    def _placeholder_cover(self, w: int, h: int, idx: int, title: str) -> Image.Image:
+        """封面缺失时的渐变占位块"""
+        palette = [(64, 116, 168), (96, 146, 96), (178, 116, 66), (126, 96, 166),
+                   (62, 144, 152), (168, 86, 104), (104, 104, 112), (74, 124, 142)]
+        c1 = palette[idx % len(palette)]
+        c2 = tuple(max(0, c - 46) for c in c1)
+        img = Image.new('RGB', (w, h))
+        d = ImageDraw.Draw(img)
+        for y in range(h):
+            t = y / max(1, h - 1)
+            d.line([(0, y), (w, y)], fill=tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3)))
+        f = self._font(max(20, int(h * 0.30)))
+        txt = (title or '未知')[:2]
+        bb = d.textbbox((0, 0), txt, font=f)
+        d.text(((w - (bb[2] - bb[0])) / 2, h * 0.24), txt, font=f, fill=(255, 255, 255))
+        return img
+
+    def _chips(self, draw, x: int, y: int, names: List[str], f, max_w: int) -> None:
+        """浅底圆角标签，超出宽度自动停止"""
+        cx, h, gap, padx = x, 26, 8, 10
+        for name in names[: self.MAX_TAGS]:
+            if not name:
+                continue
+            tw = draw.textlength(name, font=f)
+            w = tw + padx * 2
+            if cx + w > x + max_w:
+                break
+            draw.rounded_rectangle([cx, y + 4, cx + w, y + h + 4], radius=h // 2, fill=self.CHIP_BG)
+            draw.text((cx + padx, y + (h - f.size) / 2 - 1), name, font=f, fill=self.CHIP_FG)
+            cx += w + gap
+
+    # ---------- 封面下载 ----------
+    async def _fetch_covers(self, items: List[Dict]) -> Dict[str, Image.Image]:
+        covers: Dict[str, Image.Image] = {}
+        for it in items:
+            url = it.get('cover_url')
+            if not url:
+                continue
+            try:
+                path = await self.bgm_manager.download_cover_image(url, it.get('id') or 'unknown')
+                if path:
+                    covers[str(it.get('id'))] = Image.open(path).convert('RGB')
+            except Exception:
+                logger.debug(f"封面加载失败: {it.get('title')}")
+        return covers
+
+    # ---------- 生成一页 ----------
+    async def generate_page(self, items: List[Dict], season_title: str,
+                            start: int = 1, total: Optional[int] = None) -> Optional[str]:
+        """生成一页海报（最多 PER_IMAGE 部），返回临时图片路径"""
+        shown = list(items)[: self.PER_IMAGE]
+        if not shown:
+            return None
+        if total is None:
+            total = len(shown)
+
+        covers = await self._fetch_covers(shown)
+
+        height = self.PAD + self.LABEL_H + len(shown) * self.ROW_H + self.PAD
+        img = Image.new('RGB', (self.W, height), 'white')
+        d = ImageDraw.Draw(img)
+
+        f_title = self._font(40)
+        f_sub = self._font(22)
+        f_num = self._font(self.NUM_SIZE)
+        f_name = self._font(25)
+        f_jp = self._font(15)
+        f_meta = self._font(17)
+        f_tag = self._font(14)
+        f_lab = self._font(15)
+        f_score = self._font(20)
+
+        # 顶部标题
+        d.text((self.PAD, 32), season_title, font=f_title, fill=self.INK)
+        d.text((self.PAD + d.textlength(season_title, font=f_title) + 18, 50),
+               f"共 {total} 部", font=f_sub, fill=self.SUB)
+
+        for i, it in enumerate(shown):
+            idx = start + i
+            y = self.PAD + self.LABEL_H + i * self.ROW_H
+            if i:
+                d.line([(self.PAD, y - 8), (self.W - self.PAD, y - 8)], fill=self.LINE, width=1)
+
+            # 封面
+            cover_img = covers.get(str(it.get('id')))
+            if cover_img is not None:
+                cover_img = self._fit_cover(cover_img, self.COVER_W, self.COVER_H)
+            else:
+                cover_img = self._placeholder_cover(self.COVER_W, self.COVER_H, idx - 1, it.get('title', ''))
+            cover_img = self._rounded(cover_img, 10)
+            img.paste(cover_img, (self.PAD, y), cover_img)
+
+            # 行右上角编号：固定尺寸底块 + 编号居中
+            bx2 = self.W - self.PAD
+            bx1 = bx2 - self.NUM_BOX_W
+            by = y + self.NUM_OFFSET_Y
+            d.rounded_rectangle([bx1, by, bx2, by + self.NUM_BOX_H], radius=12, fill=self.NUM_BG)
+
+            ntxt = str(idx)
+            f_fit = f_num
+            bb = d.textbbox((0, 0), ntxt, font=f_fit)
+            while bb[2] - bb[0] > self.NUM_BOX_W - 12 and f_fit.size > 18:
+                f_fit = self._font(f_fit.size - 2)
+                bb = d.textbbox((0, 0), ntxt, font=f_fit)
+            tw, th = bb[2] - bb[0], bb[3] - bb[1]
+            d.text((bx1 + (self.NUM_BOX_W - tw) / 2 - bb[0], by + (self.NUM_BOX_H - th) / 2 - bb[1]),
+                   ntxt, font=f_fit, fill=self.NUM_FG)
+
+            # 右栏文字（名称/原名避开右上角编号）
+            name_w = self.TEXT_W - self.NUM_BOX_W - 20
+            d.text((self.TEXT_X, y + self.NAME_Y),
+                   self._fit_text(d, it.get('title', ''), f_name, name_w), font=f_name, fill=self.INK)
+            jp = it.get('jp') or ''
+            if jp:
+                d.text((self.TEXT_X, y + self.JP_Y),
+                       self._fit_text(d, jp, f_jp, name_w), font=f_jp, fill=self.SUB)
+            meta = it.get('day') or '其他'
+            if it.get('eps'):
+                meta += f" · {it['eps']}话"
+            d.text((self.TEXT_X, y + self.META_Y), meta, font=f_meta, fill=self.META_FG)
+            self._chips(d, self.TEXT_X, y + self.TAG_Y, it.get('tags') or [], f_tag, self.TEXT_W)
+
+            score = it.get('score') or 0
+            stxt = f"{score:.1f}" if score else '暂无'
+            d.text((self.TEXT_X, y + self.SCORE_Y), self.SCORE_LABEL, font=f_lab, fill=self.SUB)
+            lw = d.textlength(self.SCORE_LABEL, font=f_lab)
+            d.text((self.TEXT_X + lw + 8, y + self.SCORE_Y - 4), stxt, font=f_score, fill=self.SCORE_FG)
+
+        temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+        img.save(temp_file.name, 'JPEG', quality=92)
+        temp_file.close()
+        return temp_file.name

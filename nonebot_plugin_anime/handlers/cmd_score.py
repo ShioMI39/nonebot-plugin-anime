@@ -76,16 +76,7 @@ async def handle_anime_score(event: Event, args: Message = CommandArg()):
         )
 
         # 显示搜索结果列表
-        result_list = []
-        for i, (title, info) in enumerate(results[:10], 1):
-            basic_info = info.get('basic_info', {})
-            episodes = basic_info.get('episodes', '?')
-            year = basic_info.get('start_date', '')[:4] if basic_info.get('start_date') else '?'
-            result_list.append(f"{i}. {title} ({episodes}话, {year}年)")
-
-        selection_msg = f"找到{len(results)}个包含 '{anime_name}' 的番剧:\n" + "\n".join(result_list)
-        selection_msg += f"\n\n请回复编号进行评分 (输入数字 1~{min(len(results), 10)})"
-
+        selection_msg = format_search_results_page(get_user_session(event), f"包含 '{anime_name}'")
         await anime_score.send(selection_msg)
 
 
