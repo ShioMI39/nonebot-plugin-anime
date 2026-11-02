@@ -9,7 +9,7 @@ from ..config import MONTH_NAMES
 from nonebot import on_command, logger
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent
 from nonebot.exception import ActionFailed
-from nonebot.rule import Rule, to_me
+from nonebot.rule import Rule
 from nonebot.params import CommandArg
 
 
@@ -263,11 +263,8 @@ async def handle_anime_view_week(bot: Bot, event: Event, arg: Message = CommandA
 
         for weekday in weekday_order:
             if weekday in weekday_groups and weekday_groups[weekday]:
-                # 为每个星期的番剧添加星期标签
+                # 星期信息只留在会话里（view_weekday_groups），不写进条目数据
                 for title, info in weekday_groups[weekday]:
-                    # 在番剧信息中添加星期标签，方便显示
-                    if 'weekday' not in info:
-                        info['weekday'] = weekday
                     filtered_animes.append((title, info))
 
         search_query = f"{year}-{month:02d} 所有星期"

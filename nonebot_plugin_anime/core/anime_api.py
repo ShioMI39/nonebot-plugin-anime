@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from nonebot import logger
 
 from ..config import BANGUMI_API_TOKEN, BANGUMI_API_UA, HTTP_PROXY, STAFF_ROLE_MAPPING, QUARTER_MONTHS, SUBJECT_TYPE_LABEL
+from .anime_http import get_session
 
 
 
@@ -33,24 +34,24 @@ class BangumiAPIClient:
         url = f"{self._base}{path}"
         for attempt in range(self._max_retries):
             try:
-                async with aiohttp.ClientSession() as sess:
-                    async with sess.request(
-                        method, url,
-                        headers=self._headers(),
-                        params=params,
-                        json=json_body,
-                        proxy=self._proxy or None,
-                        timeout=aiohttp.ClientTimeout(total=30),
-                    ) as resp:
-                        if resp.status == 200:
-                            return await resp.json()
-                        elif resp.status == 429:
-                            wait = (attempt + 1) * 10
-                            logger.warning(f"Bangumi API 请求过多，等待 {wait}s")
-                            await asyncio.sleep(wait)
-                        else:
-                            text = await resp.text()
-                            logger.warning(f"Bangumi API HTTP {resp.status}: {text[:200]}")
+                sess = get_session()
+                async with sess.request(
+                    method, url,
+                    headers=self._headers(),
+                    params=params,
+                    json=json_body,
+                    proxy=self._proxy or None,
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    elif resp.status == 429:
+                        await resp.read()  # 读完响应体，连接才能收回连接池
+                        wait = (attempt + 1) * 10
+                        logger.warning(f"Bangumi API 请求过多，等待 {wait}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        text = await resp.text()
+                        logger.warning(f"Bangumi API HTTP {resp.status}: {text[:200]}")
             except aiohttp.ClientConnectorError as e:
                 logger.warning(f"Bangumi API 连接错误 ({attempt + 1}/{self._max_retries}): {e}")
             except asyncio.TimeoutError:

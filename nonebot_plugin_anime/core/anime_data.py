@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,11 @@ from .anime_filter import normalize_for_person, get_display_title
 from .anime_time import get_season_range, is_date_in_season, get_current_season
 
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import Bot, Event, MessageSegment, Message
+from nonebot.adapters.onebot.v11 import MessageSegment, Message
+
+
+# 只属于渲染层的字段：旧版本的「星期查看」曾把 weekday 写进条目，加载时清掉
+RUNTIME_ONLY_KEYS = ('weekday',)
 
 
 class BGMDataManager:
@@ -23,9 +28,56 @@ class BGMDataManager:
         self.bgm = BGM_JSON
 
         self.image_manager = image_manager
+        self.api = None          # 延迟注入（core/__init__ 创建 BangumiAPIClient 后调用 set_api）
 
         self.all_data = None
         self.load_all_data()
+
+    def set_api(self, api) -> None:
+        """注入 Bangumi API 客户端（用于按需刷新评分）"""
+        self.api = api
+
+    async def refresh_score(self, anime_id) -> bool:
+        """拉取单条最新评分并更新内存（不写回文件；失败静默返回 False）"""
+        if not self.api or anime_id is None:
+            return False
+
+        key = str(anime_id)
+        if not self.all_data or key not in self.all_data:
+            return False
+
+        try:
+            subject = await self.api.get_subject(int(anime_id))
+        except Exception:
+            logger.opt(exception=True).debug(f"刷新评分失败: {anime_id}")
+            return False
+
+        if not subject or subject.get('type') != 2:
+            return False
+
+        rating = subject.get('rating') or {}
+        score = rating.get('score') or 0
+        if not score:
+            return False
+
+        self.all_data[key]['rating'] = {
+            'score': float(score),
+            'votes': rating.get('total', 0),
+            'rank': rating.get('rank', 0),
+            'description': self.api._score_description(float(score)),
+        }
+        return True
+
+    async def refresh_scores(self, anime_ids: List[str], interval: float = 0.3) -> int:
+        """批量刷新评分（仅更新内存，不写盘），返回成功条数"""
+        updated = 0
+        ids = [str(aid) for aid in anime_ids if aid]
+        for i, aid in enumerate(ids):
+            if await self.refresh_score(aid):
+                updated += 1
+            if interval and i < len(ids) - 1:
+                await asyncio.sleep(interval)
+        return updated
 
     def load_all_data(self) -> Dict:
         """加载所有BGM数据"""
@@ -56,6 +108,7 @@ class BGMDataManager:
         """把数据键统一为 str(条目id)"""
         normalized: Dict = {}
         merged = 0
+        cleaned = 0
 
         def _score(info: Dict) -> int:
             s = len(info.get('tags') or []) + len(info.get('characters') or []) * 2
@@ -74,6 +127,12 @@ class BGMDataManager:
         for old_key, info in raw_data.items():
             if not isinstance(info, dict):
                 continue
+
+            # 清掉渲染层的历史字段，避免随下一次全量保存流回文件
+            for runtime_key in RUNTIME_ONLY_KEYS:
+                if runtime_key in info:
+                    info.pop(runtime_key, None)
+                    cleaned += 1
 
             # 键将改为 id
             bi = info.get('basic_info') or {}
@@ -115,6 +174,8 @@ class BGMDataManager:
 
         if merged:
             logger.warning(f"BGM 数据存在 {merged} 条重复 id，已按 id 合并")
+        if cleaned:
+            logger.info(f"已清理 {cleaned} 条历史渲染字段（{', '.join(RUNTIME_ONLY_KEYS)}）")
         return normalized
 
     def load_from_json(self, filename: str) -> Optional[Dict]:
@@ -322,8 +383,11 @@ class BGMDataManager:
         )
 
     async def create_anime_message(self, title: str, info: Dict) -> List[MessageSegment]:
-        """创建BGM格式消息"""
+        """创建BGM格式消息（单条展示前按需刷新评分）"""
         message_parts = []
+
+        # 单条实时：拉一次最新评分（失败则用本地值，不写回文件）
+        await self.refresh_score(info.get('id'))
 
         cover_url = info.get('cover_url')
         if cover_url:

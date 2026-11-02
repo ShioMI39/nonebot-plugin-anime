@@ -6,10 +6,9 @@ from ..core.anime_formatting import format_character_search_results_page
 from ..core.anime_session import get_user_session, set_session, cleanup_old_sessions, UserSession
 from ..core.anime_permissons import is_private_or_allowed_group
 from nonebot import on_command, logger
-from nonebot.rule import Rule, to_me
+from nonebot.rule import Rule
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
 from nonebot.params import CommandArg
-from nonebot.typing import T_State
 
 
 # ==================== 角色评级命令处理器 ====================

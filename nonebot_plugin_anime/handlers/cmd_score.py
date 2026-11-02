@@ -7,7 +7,7 @@ from ..core.anime_session import get_user_session, set_session, cleanup_old_sess
 from ..core.anime_permissons import is_private_or_allowed_group
 from ..core.anime_filter import parse_score_value
 from nonebot import on_command, logger
-from nonebot.rule import Rule, to_me
+from nonebot.rule import Rule
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
 from nonebot.params import CommandArg
 

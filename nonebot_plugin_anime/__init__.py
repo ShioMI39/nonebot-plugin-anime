@@ -1,7 +1,9 @@
 from .core import *
 from .handlers import *
 from .config import Config, ensure_dirs
+from .core.anime_http import close_session
 
+from nonebot import get_driver
 from nonebot.plugin import PluginMetadata
 
 __plugin_meta__ = PluginMetadata(
@@ -15,3 +17,9 @@ __plugin_meta__ = PluginMetadata(
 )
 
 ensure_dirs()
+
+
+@get_driver().on_shutdown
+async def _close_http_session() -> None:
+    """进程退出时释放共享 HTTP 会话"""
+    await close_session()

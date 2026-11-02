@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from typing import Dict, List, Optional
 from ..config import CACHE_DIR, HTTP_PROXY
+from .anime_http import get_session
 
 from nonebot import logger
 
@@ -62,26 +63,26 @@ class ImageManager:
 
         for attempt in range(3):
             try:
-                async with aiohttp.ClientSession() as sess:
-                    async with sess.get(img_url, headers=headers, proxy=self.proxy or None, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                        if resp.status != 200:
-                            if attempt < 2:
-                                await asyncio.sleep(1)
-                                continue
-                            logger.warning(f"图片下载 HTTP {resp.status}（重试耗尽）: {img_url}")
-                            return False
+                sess = get_session()
+                async with sess.get(img_url, headers=headers, proxy=self.proxy or None) as resp:
+                    if resp.status != 200:
+                        if attempt < 2:
+                            await asyncio.sleep(1)
+                            continue
+                        logger.warning(f"图片下载 HTTP {resp.status}（重试耗尽）: {img_url}")
+                        return False
 
-                        content = await resp.read()
-                        if len(content) < 1000:
-                            if attempt < 2:
-                                await asyncio.sleep(1)
-                                continue
-                            logger.warning(f"图片过小（重试耗尽）: {img_url}")
-                            return False
+                    content = await resp.read()
+                    if len(content) < 1000:
+                        if attempt < 2:
+                            await asyncio.sleep(1)
+                            continue
+                        logger.warning(f"图片过小（重试耗尽）: {img_url}")
+                        return False
 
-                        with open(filepath, 'wb') as f:
-                            f.write(content)
-                        return True
+                    with open(filepath, 'wb') as f:
+                        f.write(content)
+                    return True
 
             except asyncio.TimeoutError:
                 pass

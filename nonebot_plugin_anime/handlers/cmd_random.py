@@ -6,10 +6,9 @@ from ..core.anime_filter import filter_anime, parse_score_value
 from ..core.anime_permissons import is_private_or_allowed_group
 from ..core.anime_time import parse_date_range_optimized, get_max_year, validate_year
 from nonebot import on_command
-from nonebot.rule import Rule, to_me
-from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
+from nonebot.rule import Rule
+from nonebot.adapters.onebot.v11 import Bot, Event, Message
 from nonebot.params import CommandArg
-from nonebot.permission import SUPERUSER
 
 
 anime_random = on_command("anime random", aliases={"随机番剧"}, priority=5, rule=Rule(is_private_or_allowed_group))

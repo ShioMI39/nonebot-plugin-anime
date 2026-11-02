@@ -3,7 +3,7 @@ import shutil
 from ..core import bgm_manager
 from ..core.anime_permissons import group_permission_manager, is_private_or_allowed_group
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
 from nonebot.rule import Rule

@@ -170,12 +170,10 @@ async def handle_bgmtag_session(bot: Bot, event: Event, user_input: str, session
         # 获取选择的番剧信息
         title_cn, anime_info = session.search_results[selection - 1]
 
-        # 显示标签信息
+        # 显示标签信息（display_anime_tags 会把会话指向最新记录）
         await display_anime_tags(bot, event, title_cn, anime_info)
 
-        # 更新会话状态为已选择番剧
-        session.current_anime = anime_info
-        session.current_anime_title = title_cn
+        # 更新会话时间戳
         session.timestamp = time.time()
         return
 

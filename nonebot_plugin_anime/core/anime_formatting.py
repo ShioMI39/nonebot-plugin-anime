@@ -1,5 +1,8 @@
 import math
+from typing import Dict
+
 from .anime_session import UserSession
+from .anime_time import normalize_weekday
 
 
 # ==================== 格式化函数 ====================
@@ -199,6 +202,29 @@ def format_season_results_page(session: UserSession, title: str = "番剧列表"
     return "\n".join(output_lines)
 
 
+def _weekday_index(weekday_groups: Dict) -> Dict[str, str]:
+    """把 {星期: [(标题, 条目), ...]} 反向索引为 {条目id: 星期}"""
+    index: Dict[str, str] = {}
+    for day, items in (weekday_groups or {}).items():
+        for _, info in items or []:
+            if not isinstance(info, dict):
+                continue
+            anime_id = info.get('id')
+            if anime_id is not None:
+                index[str(anime_id)] = day
+    return index
+
+
+def _weekday_of(anime_info: Dict, index: Dict[str, str]) -> str:
+    """条目的星期：优先取会话里的分组，退回 broadcast_day"""
+    anime_id = anime_info.get('id')
+    day = index.get(str(anime_id)) if anime_id is not None else None
+    if day:
+        return day
+    basic_info = anime_info.get('basic_info') or {}
+    return normalize_weekday(basic_info.get('broadcast_day', '')) or '其他'
+
+
 def format_week_results_page(session: UserSession) -> str:
     """格式化星期查看结果页面"""
     if not session.search_results:
@@ -229,26 +255,23 @@ def format_week_results_page(session: UserSession) -> str:
     output_lines = [f"{title}（第{session.current_page + 1}/{session.total_pages}页）：",]
     output_lines.append("")  # 空行
 
-    # 如果没有指定具体星期，按星期分组显示
+    # 分组信息取自会话，条目本身不携带渲染字段
     weekday_groups = getattr(session, 'view_weekday_groups', {})
     if not target_weekday and weekday_groups:
-        # 获取当前页的番剧，并按星期分组显示
-        current_page_animes = session.search_results[start_idx:end_idx]
-
-        # 按星期顺序显示
+        # 按星期顺序显示当前页（列表顺序即分组顺序）
+        weekday_index = _weekday_index(weekday_groups)
         current_weekday = None
 
-        for i, (anime_title, anime_info) in enumerate(current_page_animes):
-            basic_info = anime_info.get('basic_info', {})
-
-            # 获取星期信息
-            weekday = anime_info.get('weekday', '')
-            if weekday and weekday != current_weekday:
-                if current_weekday is not None:  # 如果不是第一个星期，添加空行
-                    output_lines.append("")  # 添加一个空行分隔不同的星期
+        for i, (anime_title, anime_info) in enumerate(session.search_results[start_idx:end_idx]):
+            weekday = _weekday_of(anime_info, weekday_index)
+            if weekday != current_weekday:
+                if current_weekday is not None:  # 不同星期之间空一行
+                    output_lines.append("")
 
                 output_lines.append(f"{weekday}：")
                 current_weekday = weekday
+
+            basic_info = anime_info.get('basic_info', {})
 
             # 使用chinese_title，如果没有则使用original_title
             chinese_title = basic_info.get('chinese_title', '').strip()

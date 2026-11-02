@@ -8,7 +8,7 @@ from ..core.anime_formatting import format_search_results_page, format_cv_search
 from ..core.anime_permissons import is_private_or_allowed_group
 from nonebot import on_command, logger
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
-from nonebot.rule import Rule, to_me
+from nonebot.rule import Rule
 from nonebot.params import CommandArg
 
 

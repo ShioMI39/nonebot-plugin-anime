@@ -6,7 +6,7 @@ from ..core.anime_formatting import format_search_results_page
 from ..core.anime_session import get_user_session, set_session, cleanup_old_sessions
 from ..core.anime_permissons import is_private_or_allowed_group
 from nonebot import on_command, logger
-from nonebot.rule import Rule, to_me
+from nonebot.rule import Rule
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
 from nonebot.params import CommandArg
 
@@ -37,12 +37,8 @@ async def handle_bgmtag_view(bot: Bot, event: Event, args: Message = CommandArg(
     # 如果只有一个结果，直接显示
     if len(results) == 1:
         title_cn, anime_info = results[0]
+        # display_anime_tags 内部已把会话指向最新记录，无需再赋一次
         await display_anime_tags(bot, event, title_cn, anime_info)
-
-        # 设置当前操作的番剧
-        session = get_user_session(event)
-        session.current_anime = anime_info
-        session.current_anime_title = title_cn
     else:
         # 多个结果，设置标签管理会话
         set_session(
@@ -61,12 +57,8 @@ async def handle_bgmtag_view(bot: Bot, event: Event, args: Message = CommandArg(
 
 async def display_anime_tags(bot: Bot, event: Event, title_cn: str, anime_info: Dict):
     """显示番剧标签信息"""
-    tag_manager.load_all_data()
-
-    anime_id = anime_info.get('id') if isinstance(anime_info, dict) else None
-    latest_anime_info = tag_manager.all_data.get(str(anime_id)) if anime_id is not None else None
-    if latest_anime_info is None:
-        latest_anime_info = anime_info
+    # 按 id 在最新数据里定位（会话里可能持有旧对象）
+    latest_anime_info = tag_manager.find_anime(anime_info) or anime_info
 
     # 获取标签
     tags = tag_manager.get_anime_tags(latest_anime_info)

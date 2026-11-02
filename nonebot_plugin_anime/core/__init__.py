@@ -23,6 +23,7 @@ character_score_manager = CharacterScoreManager(bgm_manager)
 
 # 6. Bangumi API
 bgm_api = BangumiAPIClient()
+bgm_manager.set_api(bgm_api)
 
 # 7. 图片生成器
 character_image_generator = CharacterScoreImageGenerator(bgm_manager, character_score_manager)

@@ -44,6 +44,9 @@ CACHE_DIR = _cache_dir
 FONTS_DIR = RESOURCE_DIR / "fonts"
 BGM_JSON = RESOURCE_DIR / "bgm.json"
 
+# 绘图缓存目录
+POSTER_DIR = CACHE_DIR / "poster"
+
 SCORE_JSON = store.get_plugin_data_file("score.json")
 CHARACTER_SCORE_JSON = store.get_plugin_data_file("character_score.json")
 GROUP_PERMISSION_JSON = store.get_plugin_data_file("group_permission.json")
@@ -75,6 +78,8 @@ MIN_YEAR = 1900
 MONTH_NAMES = {1: "一月", 4: "四月", 7: "七月", 10: "十月"}
 
 SUBJECT_TYPE_LABEL = {1: "书籍", 2: "动画", 3: "音乐", 4: "游戏", 6: "三次元"}
+
+WEEKDAY_ORDER = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日', '其他']
 
 QUARTER_MONTHS = {
     1: ("01", "03"), 4: ("04", "06"),

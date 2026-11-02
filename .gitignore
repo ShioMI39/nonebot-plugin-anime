@@ -23,3 +23,5 @@ bangumi_resource/
 # OS
 .DS_Store
 Thumbs.db
+
+/cmd_tool.py

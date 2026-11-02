@@ -1,5 +1,6 @@
 import tempfile
 import re
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 from typing import Dict, List, Optional, Tuple
@@ -794,7 +795,7 @@ class AnimeScoreImageGenerator:
 class SeasonPosterGenerator:
     """番剧绘制成卡片列表长图"""
 
-    PER_IMAGE = 10
+    PER_IMAGE = 15
 
     PAD = 36
     LABEL_H = 96
@@ -912,8 +913,12 @@ class SeasonPosterGenerator:
 
     # ---------- 生成一页 ----------
     async def generate_page(self, items: List[Dict], season_title: str,
-                            start: int = 1, total: Optional[int] = None) -> Optional[str]:
-        """生成一页海报（最多 PER_IMAGE 部），返回临时图片路径"""
+                            start: int = 1, total: Optional[int] = None,
+                            out_path=None) -> Optional[str]:
+        """生成一页海报（最多 PER_IMAGE 部）
+
+        out_path 给出时写入该路径（用于图缓存），否则写入临时文件
+        """
         shown = list(items)[: self.PER_IMAGE]
         if not shown:
             return None
@@ -980,10 +985,16 @@ class SeasonPosterGenerator:
             if jp:
                 d.text((self.TEXT_X, y + self.JP_Y),
                        self._fit_text(d, jp, f_jp, name_w), font=f_jp, fill=self.SUB)
-            meta = it.get('day') or '其他'
+            # 放送日期 · 星期 · 话数
+            meta_parts = []
+            if it.get('date'):
+                meta_parts.append(str(it['date']))
+            meta_parts.append(it.get('day') or '其他')
             if it.get('eps'):
-                meta += f" · {it['eps']}话"
-            d.text((self.TEXT_X, y + self.META_Y), meta, font=f_meta, fill=self.META_FG)
+                meta_parts.append(f"{it['eps']}话")
+            meta = ' · '.join(meta_parts)
+            d.text((self.TEXT_X, y + self.META_Y),
+                   self._fit_text(d, meta, f_meta, self.TEXT_W), font=f_meta, fill=self.META_FG)
             self._chips(d, self.TEXT_X, y + self.TAG_Y, it.get('tags') or [], f_tag, self.TEXT_W)
 
             score = it.get('score') or 0
@@ -991,6 +1002,12 @@ class SeasonPosterGenerator:
             d.text((self.TEXT_X, y + self.SCORE_Y), self.SCORE_LABEL, font=f_lab, fill=self.SUB)
             lw = d.textlength(self.SCORE_LABEL, font=f_lab)
             d.text((self.TEXT_X + lw + 8, y + self.SCORE_Y - 4), stxt, font=f_score, fill=self.SCORE_FG)
+
+        if out_path:
+            path = Path(out_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(str(path), 'JPEG', quality=92)
+            return str(path)
 
         temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
         img.save(temp_file.name, 'JPEG', quality=92)

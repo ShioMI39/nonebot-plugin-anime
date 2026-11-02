@@ -6,7 +6,7 @@ from ..core.anime_time import parse_single_date, validate_year
 from ..config import BANGUMI_API_TOKEN
 from nonebot import on_command, logger
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
-from nonebot.rule import Rule, to_me
+from nonebot.rule import Rule
 from nonebot.params import CommandArg
 from nonebot.permission import SUPERUSER
 
