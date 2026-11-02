@@ -315,11 +315,11 @@ async def handle_anime_view_poster(bot: Bot, event: Event, arg: Message = Comman
         search_type, search_query = "季度查看图", f"{year}-{month:02d}"
         view_month, view_month_name = month, month_name
 
+    await anime_view_poster.send("正在绘制，请稍候...")
+
     pages, pairs = await _build_and_cache(pairs, prefix, title)
     if not pages:
         await anime_view_poster.finish("绘图失败，请稍后重试")
-
-    await anime_view_poster.send("正在绘制，请稍候...")
 
     # 会话顺序与图片编号一致（缓存复用时按缓存记录的顺序）
     set_session(
@@ -378,6 +378,8 @@ async def handle_anime_week_poster(bot: Bot, event: Event, arg: Message = Comman
 
     days = [target_weekday] if target_weekday else WEEKDAY_ORDER
 
+    await anime_week_poster.send("正在绘制，请稍候...")
+
     pages: List[Tuple[str, str]] = []
     flat: List[Tuple[str, Dict]] = []
     index = 0
@@ -411,8 +413,6 @@ async def handle_anime_week_poster(bot: Bot, event: Event, arg: Message = Comman
         view_target_weekday=target_weekday,
         view_weekday_groups=weekday_groups
     )
-
-    await anime_week_poster.send("正在绘制，请稍候...")
 
     await _send_poster_pages(bot, event, pages)
     await anime_week_poster.send(f"共 {len(flat)} 部，输入编号查看详情（1~{len(flat)}）")
@@ -520,6 +520,8 @@ async def handle_anime_week_poster_update(bot: Bot, event: Event, arg: Message =
 
     days = [target_weekday] if target_weekday else WEEKDAY_ORDER
 
+    await anime_week_poster_update.send("正在更新评分并重新绘制，请稍候...")
+
     removed = 0
     pages: List[Tuple[str, str]] = []
     flat: List[Tuple[str, Dict]] = []
@@ -538,8 +540,6 @@ async def handle_anime_week_poster_update(bot: Bot, event: Event, arg: Message =
 
     if not flat:
         await anime_week_poster_update.finish(f"{year}年{month_name}没有找到番剧")
-
-    await anime_week_poster_update.send("正在更新评分并重新绘制，请稍候...")
 
     set_session(
         event,
